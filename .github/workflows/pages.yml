@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Verify the downloadable index is current
+        run: git diff --exit-code -- index.html
       - name: Upload the static game
         uses: actions/upload-pages-artifact@v3
         with:

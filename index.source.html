@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#111d22" />
+    <meta
+      name="description"
+      content="Deepforge — шахтёрская экспедиция. Объединяйте кирки, открывайте 130 шахт и доберитесь до сердца горы."
+    />
+    <link rel="icon" type="image/svg+xml" href="/assets/mark.svg" />
+    <link rel="stylesheet" href="./style.css" />
+    <title>Deepforge — Сердце горы</title>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="header">
+        <a class="brand" href="./" aria-label="Deepforge — главная"
+          ><img src="/assets/mark.svg" width="42" height="42" alt="" /><span
+            >DEEPFORGE<small>ШАХТЁРСКАЯ ЭКСПЕДИЦИЯ</small></span
+          ></a
+        >
+        <div class="header-actions">
+          <span class="save-status" id="saveStatus">Запускаем игру…</span
+          ><button
+            class="icon-button"
+            id="sound"
+            aria-label="Выключить звук"
+            aria-pressed="false"
+            title="Звук"
+          >
+            ♪</button
+          ><button
+            class="icon-button"
+            id="help"
+            aria-label="Как играть"
+            title="Как играть"
+          >
+            ?
+          </button>
+        </div>
+      </header>
+      <main>
+        <section class="intro">
+          <div>
+            <p class="eyebrow">
+              <span class="live-dot"></span> ВНИЗ, К НОВЫМ ОТКРЫТИЯМ
+            </p>
+            <h1>У горы есть <em>секреты.</em></h1>
+            <p class="intro-copy">
+              Объединяй инструменты. Открывай глубины. Куй свою историю.
+            </p>
+          </div>
+          <div class="wallet">
+            <div class="wallet-item">
+              <span class="coin-icon">◆</span
+              ><span><small>МОНЕТЫ</small><b id="coins">180</b></span>
+            </div>
+            <div class="wallet-item gem-wallet">
+              <span class="gem-icon">◇</span
+              ><span><small>КРИСТАЛЛЫ</small><b id="gems">0</b></span>
+            </div>
+          </div>
+        </section>
+        <div class="workspace">
+          <section class="mine-panel panel" aria-label="Текущая шахта">
+            <div class="mine-header">
+              <div>
+                <p class="eyebrow">
+                  <span id="mineKind">ЭКСПЕДИЦИЯ</span>
+                  <span id="level">01</span> / 130
+                </p>
+                <h2 id="mineName">Первый свет</h2>
+              </div>
+              <button class="quiet-button" id="mapOpen">
+                Карта шахт
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 13 13 3M4 3h9v9"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                  />
+                </svg>
+              </button>
+            </div>
+            <div class="mine-meta">
+              <span
+                ><i class="biome-dot"></i
+                ><span id="biome">Медные предгорья</span></span
+              ><span id="depth">100 м под землёй</span>
+            </div>
+            <div id="bossStatus" class="boss-status hidden" aria-live="polite">
+              <div>
+                <strong id="bossName">Хранитель</strong><b id="bossHp"></b>
+              </div>
+              <div class="progress"><div id="bossFill"></div></div>
+              <small id="bossHint"
+                >Очисти шахту, чтобы разбудить хранителя.</small
+              >
+            </div>
+            <div class="game-frame">
+              <canvas
+                id="game"
+                width="420"
+                height="560"
+                tabindex="0"
+                role="img"
+                aria-label="Шахта. Выберите кирку и нажмите на поле или Enter, чтобы бросить её в центр."
+              ></canvas>
+              <div class="canvas-badge">
+                <span class="live-dot"></span>
+                <span id="activeTools">0 / 5</span> В ШАХТЕ
+              </div>
+              <button id="pause" class="pause-button" aria-label="Пауза">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M5 3v10M11 3v10"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  />
+                </svg>
+              </button>
+              <div id="pauseShade" class="pause-shade hidden">
+                <span>Экспедиция на паузе</span
+                ><button id="resume" class="button primary">Продолжить</button>
+              </div>
+              <div id="levelOverlay" class="level-overlay hidden">
+                <span class="completion-icon">✦</span>
+                <p class="eyebrow">ЕЩЁ ОДНО ОТКРЫТИЕ</p>
+                <h2 id="winTitle">Шахта зачищена!</h2>
+                <p id="winText"></p>
+                <button id="nextLevel" class="button primary">
+                  В следующую шахту →
+                </button>
+              </div>
+            </div>
+            <div class="mine-bottom">
+              <div class="progress-caption">
+                <span>ИССЛЕДОВАНО</span><b id="remaining">0 / 70 блоков</b>
+              </div>
+              <div class="progress"><div id="progressFill"></div></div>
+              <div class="mine-budget">
+                <span>Находки <b id="mineEarned">0</b> ◆</span
+                ><span>Снабжение <b id="mineSpent">0</b> ◆</span>
+              </div>
+              <p class="checkpoint-note" id="nextMilestone">
+                Премия за каждые 10 блоков
+              </p>
+              <p id="hint" role="status">
+                Выбери кирку в мастерской и нажми на шахту.
+              </p>
+            </div>
+          </section>
+          <aside class="sidebar">
+            <section class="workshop panel" aria-label="Мастерская">
+              <div class="section-title">
+                <div>
+                  <p class="eyebrow">ХОРОШИЙ ИНСТРУМЕНТ — ПОЛДЕЛА</p>
+                  <h2>
+                    Мастерская<span class="count" id="capacity">5 / 12</span>
+                  </h2>
+                </div>
+                <span class="workshop-mark">⌁</span>
+              </div>
+              <p class="section-copy">
+                Две одинаковые кирки — одна помощнее.<br />Перетащи или выбери
+                их по очереди.
+              </p>
+              <div
+                class="inventory"
+                id="inventory"
+                aria-label="Инвентарь"
+              ></div>
+              <div class="selected-tool">
+                <span id="selectedIcon"></span>
+                <div>
+                  <b id="selectedName">Выбери инструмент</b
+                  ><small id="selectedInfo">И брось его в шахту слева</small>
+                </div>
+                <span class="key-hint">↵</span>
+              </div>
+              <button id="dropSelected" class="button mobile-drop hidden">
+                Бросить выбранный инструмент ↑
+              </button>
+              <button id="buy" class="button primary purchase">
+                <span>＋ Кирка · ур. <b id="shopTier">1</b></span
+                ><span class="price"
+                  ><span class="tiny-coin">◆</span> <b id="buyCost">25</b></span
+                >
+              </button>
+              <button id="forge" class="button forge">
+                <span>◇ Ковка · уровень <b id="forgeTier">2</b></span
+                ><span><b id="forgeCost">5</b> кристаллов</span>
+              </button>
+              <button id="rescue" class="button rescue hidden">
+                Получить бесплатную кирку <span>↗</span>
+              </button>
+              <div class="upgrade">
+                <div class="upgrade-top">
+                  <span class="upgrade-icon">↟</span>
+                  <div>
+                    <h3>Сила удара</h3>
+                    <p>Усилить каждый инструмент</p>
+                  </div>
+                  <b class="power-level">+<span id="damage">2</span></b>
+                </div>
+                <button id="upgrade" class="button secondary">
+                  <span>Улучшить силу</span
+                  ><span class="price"
+                    ><span class="tiny-coin">◆</span>
+                    <b id="upgradeCost">90</b></span
+                  >
+                </button>
+              </div>
+              <button id="rewardAd" class="reward-button hidden">
+                ▷ Смотреть рекламу · +80 монет
+              </button>
+            </section>
+            <section class="journal panel">
+              <div class="journal-heading">
+                <span>✧</span>
+                <p class="eyebrow">ДНЕВНИК ЭКСПЕДИЦИИ</p>
+                <span class="journal-line"></span>
+              </div>
+              <h3 id="journalTitle">Каждая глубина — новая история</h3>
+              <p id="journalText">
+                Впереди 130 шахт: от тёплых медных жил до лунных кристаллов.
+              </p>
+              <p id="journeyRange" class="journey-range"></p>
+              <div
+                class="journey-track"
+                id="journeyTrack"
+                aria-label="Прогресс экспедиции"
+              ></div>
+              <div class="journal-footer">
+                <span>Лучшая шахта</span><b><span id="best">01</span> / 130</b>
+              </div>
+            </section>
+            <section class="trophy-panel panel">
+              <div class="trophy-heading">
+                <p class="eyebrow">ТРОФЕИ ХРАНИТЕЛЕЙ</p>
+                <span id="trophyCount">0 / 8</span>
+              </div>
+              <div class="trophy-list" id="trophyList"></div>
+              <p id="trophyBoosts" class="trophy-boosts">
+                Первый хранитель ждёт в 15-й шахте.
+              </p>
+            </section>
+            <div class="field-notes">
+              <span class="note-star">✳</span>
+              <p>
+                Бомбы разрушают соседние блоки.<br />Кристаллы любят терпеливых.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </main>
+      <footer>
+        <span>DEEPFORGE <i>·</i> Сделано для маленьких открытий</span
+        ><button id="music" aria-pressed="false">Мелодия: вкл</button
+        ><button id="reset">Начать заново</button>
+      </footer>
+    </div>
+    <dialog id="tutorial" class="dialog">
+      <button
+        class="dialog-close"
+        id="tutorialClose"
+        aria-label="Закрыть обучение"
+      >
+        ×
+      </button>
+      <p class="eyebrow">ДОБРО ПОЖАЛОВАТЬ В DEEPFORGE</p>
+      <h2>Большое начинается<br />с маленькой кирки.</h2>
+      <div class="tutorial-art">
+        <img
+          src="/assets/pickaxe.svg"
+          width="92"
+          height="92"
+          alt="Авторская кирка Deepforge"
+        /><span>＋</span
+        ><img src="/assets/pickaxe.svg" width="92" height="92" alt="" /><span
+          >→</span
+        ><img
+          src="/assets/hammer.svg"
+          width="92"
+          height="92"
+          alt="Более мощный инструмент"
+        />
+      </div>
+      <ol class="tutorial-steps">
+        <li>
+          <b>Объедини.</b> Выбери две кирки одного уровня или перетащи одну на
+          другую.
+        </li>
+        <li>
+          <b>Брось.</b> Выбери инструмент и нажми на шахту. Одновременно
+          добывают до пяти инструментов.
+        </li>
+        <li>
+          <b>Открой.</b> Собирай монеты, усиливай удар и доберись до сердца
+          горы.
+        </li>
+        <li>
+          <b>Подготовься.</b> Каждая восьмая шахта — испытание. Перед боссом —
+          золотая передышка. Каждый пятнадцатый хранитель оставляет трофей с
+          постоянным бонусом.
+        </li>
+      </ol>
+      <p class="safety-note">
+        Кирки закончились? Купи новую или получи бесплатную, если монет не
+        осталось.
+      </p>
+      <button id="tutorialStart" class="button primary">
+        Начать экспедицию →
+      </button>
+    </dialog>
+    <dialog id="mapDialog" class="dialog map-dialog">
+      <button class="dialog-close" id="mapClose" aria-label="Закрыть карту">
+        ×
+      </button>
+      <p class="eyebrow">130 ШАХТ · ОДНА ИСТОРИЯ</p>
+      <h2>Путь к сердцу горы</h2>
+      <p class="section-copy">
+        Каждая новая шахта открывается после зачистки предыдущей.
+      </p>
+      <div id="mineMap" class="mine-map"></div>
+    </dialog>
+    <dialog id="resetDialog" class="dialog reset-dialog">
+      <p class="eyebrow">НОВАЯ ИСТОРИЯ</p>
+      <h2>Начать с чистого листа?</h2>
+      <p>
+        Монеты, инструменты, трофеи и прогресс шахт будут сброшены. Отменить это
+        действие нельзя.
+      </p>
+      <div class="dialog-actions">
+        <button id="resetCancel" class="button secondary">
+          Продолжить игру</button
+        ><button id="resetConfirm" class="button danger">
+          Сбросить прогресс
+        </button>
+      </div>
+    </dialog>
+    <script type="module" src="./game.js"></script>
+  </body>
+</html>
