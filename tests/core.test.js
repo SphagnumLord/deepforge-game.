@@ -31,7 +31,7 @@ test("130 deterministic mines have different layouts, bounded HP and rare resour
     const board = generateLevel(level);
     assert.deepEqual(board, generateLevel(level));
     assert.equal(board.length, 70);
-    assert.ok(board.every((b) => b.hp > 0 && b.hp <= 4000));
+    assert.ok(board.every((b) => b.hp > 0 && b.hp <= 15000));
     assert.ok(board.some((b) => b.material >= 4));
     assert.ok(board.some((b) => b.type === "bomb"));
     signatures.add(JSON.stringify(board));
@@ -63,9 +63,11 @@ test("purchases and upgrades debit exact cost; full inventory and low funds are 
     index = buyTool(s);
   assert.equal(s.coins, 180 - cost);
   assert.equal(s.inventory[index], 1);
+  s.gems = 3;
   assert.equal(upgrade(s), true);
   assert.equal(s.power, 1);
-  assert.equal(s.coins, 65);
+  assert.equal(s.coins, 180 - cost);
+  assert.equal(s.gems, 0);
   const full = createState();
   full.inventory.fill(1);
   assert.equal(buyTool(full), -1);
@@ -76,21 +78,19 @@ test("purchases and upgrades debit exact cost; full inventory and low funds are 
   s.runs = 100000;
   assert.ok(buyCost(s) < 40);
 });
-test("a broke empty player can always recover; active tools and duplicate rescue cannot farm inventory", () => {
+test("one emergency pick is available per normal attempt, including after it is thrown", () => {
   const s = createState();
   s.coins = 0;
   s.inventory.fill(null);
   assert.equal(canRescue(s, 1), false);
   assert.equal(rescue(s, 1), false);
-  for (let n = 0; n < 20; n++) {
-    assert.equal(rescue(s), true);
-    assert.equal(rescue(s), false);
-    assert.equal(launch(s, 0), 1);
-  }
-  assert.equal(launch(s, 0), null);
-  rescue(s);
+  assert.equal(rescue(s), true);
+  assert.equal(rescue(s), false);
   assert.equal(launch(s, 0, BALANCE.maxActive), null);
-  assert.equal(s.inventory[0], 1);
+  assert.equal(launch(s, 0), 1);
+  assert.equal(launch(s, 0), null);
+  assert.equal(rescue(s), false);
+  assert.equal(s.inventory[0], null);
 });
 test("crystal forging spends gems for biome-scaled tools and rejects insufficient resources", () => {
   const s = createState();

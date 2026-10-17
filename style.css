@@ -573,6 +573,17 @@ h3 {
   margin-top: 10px;
   border: 1px solid #88ae82;
 }
+.attempt-caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 9px;
+}
+.attempt-caption b, .tiny-diamond { color: #a5d2c5; }
+.rescue-rule { color: #c3b28d; font-size: 10px; line-height: 1.6; }
 .reward-button {
   font-size: 10px;
   color: var(--accent);

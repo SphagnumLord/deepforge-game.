@@ -29,6 +29,9 @@ import {
   bossActive,
   bossVulnerable,
   hitBoss,
+  recommendedTier,
+  isHardMine,
+  restartAttempt,
 } from "./src/core.js";
 import { MinePhysics, blockRect, FIELD } from "./src/physics.js";
 import { MineRenderer } from "./src/renderer.js";
@@ -114,10 +117,18 @@ function refresh() {
   $("forgeTier").textContent = forgeTier(state);
   $("upgrade").disabled =
     locked ||
-    state.coins < upgradeCost(state) ||
+    state.gems < upgradeCost(state) ||
     state.power >= BALANCE.maxPower;
   $("rescue").classList.toggle("hidden", !canRescue(state, active));
   $("rescue").disabled = locked;
+  $("attemptNumber").textContent = state.attemptNumber;
+  $("tierNeed").textContent = recommendedTier(state.level);
+  $("rescueRule").textContent = isHardMine(state)
+    ? "Без аварийных кирок: потеря запасов перезапустит шахту."
+    : state.rescueUsed
+      ? "Аварийная кирка использована. Потеря запасов перезапустит шахту."
+      : "Одна аварийная кирка на попытку. Затем шахта начинается заново.";
+  canvas.dataset.attempt = state.attemptNumber;
   $("dropSelected").classList.toggle("hidden", selected < 0 || locked);
   $("dropSelected").disabled = active >= BALANCE.maxActive;
   $("rewardAd").classList.toggle("hidden", !platform.canReward);
@@ -270,7 +281,7 @@ function setupLevel() {
   physics = new MinePhysics(blocks, {
     onHit: (id, power, tool) => {
       if (state.levelComplete) return;
-      const result = hitBlock(state, blocks, id, power),
+      const result = hitBlock(state, blocks, id, power, tool.tier),
         { x, y } = tool.body.position;
       renderer.burst(x, y, "#e9cca0", 4);
       for (const b of result.destroyed) {
@@ -288,6 +299,11 @@ function setupLevel() {
         );
       }
       syncBoss();
+      if (result.blocked) {
+        canvas.dataset.blockedHits = Number(canvas.dataset.blockedHits || 0) + 1;
+        hint(`Эта порода требует кирку ур. ${blocks[id].minTier}+. Объедини одинаковые инструменты.`);
+        return;
+      }
       audio.play(
         result.completed
           ? "win"
@@ -316,7 +332,11 @@ function setupLevel() {
       refresh();
     },
     onBossHit: (power, tool) => {
-      const result = hitBoss(state, power);
+      const result = hitBoss(state, power, tool.tier);
+      if (result.blocked) {
+        hint(`Броню хранителя пробивает кирка ур. ${recommendedTier(state.level)}+. Сила удара не заменяет крепкий металл.`);
+        return;
+      }
       renderer.burst(
         tool.body.position.x,
         tool.body.position.y,
@@ -336,12 +356,14 @@ function setupLevel() {
       persist();
       refresh();
     },
-    onRetire: () => {
+    onRetire: (retired) => {
+      audio.play("toolBreak");
+      canvas.dataset.brokenTools = Number(canvas.dataset.brokenTools || 0) + retired.length;
+      for (const tool of retired)
+        renderer.burst(tool.body.position.x, tool.body.position.y, "#b49b72", 6);
       refresh();
       if (canRescue(state, physics.tools.length))
-        hint(
-          "Кирки закончились? Забери бесплатную в мастерской — и продолжай!",
-        );
+        hint("Последний шанс: одна аварийная кирка в мастерской. Потом — новая попытка.");
     },
   });
   const level = LEVELS[state.level - 1];
@@ -383,9 +405,9 @@ function setupLevel() {
   $("journalText").textContent = level.boss
     ? `${level.trophy.boss} скрывается под породой. Три удара раскалывают броню, четвёртый бьёт в слабое место. Награда: ${level.trophy.description}.`
     : level.treasure
-      ? `${level.challenge ? "Испытание остаётся сложным, но " : ""}Много мягких золотых жил. Пополни кошелёк перед хранителем; не трать весь запас на улучшения.`
+      ? `${level.challenge ? "Испытание остаётся сложным, но " : ""}Много золотых жил. Пополни кошелёк перед хранителем и собери запас усиленных кирок.`
       : level.challenge
-        ? "Прочность породы ×2,75. Объединяй инструменты и используй бомбы. За зачистку — дополнительный кристалл."
+        ? "Твёрдая броня и ни одной аварийной кирки. Готовь усиленные инструменты заранее. За зачистку — дополнительный алмаз."
         : nextBoss
           ? `Хранитель на ${nextBoss.level}-м горизонте. Перед ним будет богатая шахта, а после победы — «${nextBoss.name}»: ${nextBoss.description}.`
           : "Все хранители позади. Впереди сердце горы — и последние открытия экспедиции.";
@@ -561,7 +583,7 @@ $("forge").onclick = () => {
   audio.unlock();
   audio.play("gem");
   hint(
-    `Кристаллы превратились в инструмент «${TOOLS[state.inventory[index] - 1].name}»!`,
+    `Алмазы превратились в инструмент «${TOOLS[state.inventory[index] - 1].name}»!`,
   );
   persist();
   refresh();
@@ -577,7 +599,7 @@ $("upgrade").onclick = () => {
 $("rescue").onclick = () => {
   if (isPaused() || !rescue(state, physics.tools.length)) return;
   selected = 0;
-  hint("Бесплатная кирка твоя. Можно продолжать экспедицию!");
+  hint("Аварийная кирка получена. Это последняя помощь в этой попытке.");
   persist();
   refresh();
 };
@@ -659,6 +681,11 @@ window.addEventListener("pagehide", () => {
 function frame(time) {
   accumulator += Math.min(50, Math.max(0, time - (lastTime || time)));
   lastTime = time;
+  if (!isPaused() && restartAttempt(state, physics.tools.length)) {
+    accumulator = 0;
+    setupLevel();
+    hint("Запасы закончились. Шахта начата заново: стартовое снаряжение возвращено, находки попытки потеряны.");
+  }
   if (!isPaused() && !state.levelComplete)
     while (accumulator >= 1000 / 60) {
       physics.step();
@@ -674,7 +701,7 @@ async function boot() {
   await platform.init();
   const cloud = await platform.load();
   if (
-    [2, 3].includes(cloud?.version) &&
+    [2, 3, 4].includes(cloud?.version) &&
     Array.isArray(cloud.inventory) &&
     cloud.inventory.length === BALANCE.capacity &&
     Number.isSafeInteger(cloud.updatedAt) &&

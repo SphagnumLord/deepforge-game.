@@ -28,7 +28,7 @@ export const MATERIALS = [
     face: "#d0b374",
   },
   {
-    name: "Лунный кристалл",
+    name: "Кварцит",
     hp: 14,
     reward: 38,
     color: "#315a62",
@@ -56,8 +56,8 @@ export const TOOLS = toolNames.map((name, index) => ({
   color: ["#a8b6b3", "#b8956f", "#b8c4c0", "#99aaa3", "#b8bda7", "#c5b789"][
     index % 6
   ],
-  hits: 12 + index * 2,
-  multiplier: Math.round(1.6 ** index),
+  hits: 10 + index * 3,
+  multiplier: 1.85 ** index,
 }));
 const integer = (v, fallback, min, max) =>
   Number.isSafeInteger(v) ? Math.min(max, Math.max(min, v)) : fallback;
@@ -72,7 +72,7 @@ export function random(seed) {
 }
 export function createState() {
   return {
-    version: 3,
+    version: 4,
     coins: BALANCE.startingCoins,
     gems: 0,
     level: 1,
@@ -81,6 +81,9 @@ export function createState() {
     runs: 0,
     purchasesThisMine: 0,
     campaignWins: 0,
+    rescueUsed: false,
+    attemptNumber: 1,
+    entry: null,
     inventory: [1, 1, 1, 1, 2, ...Array(7).fill(null)],
     board: null,
     boss: null,
@@ -95,7 +98,7 @@ export function createState() {
 export function generateLevel(level) {
   const config = LEVELS[Math.max(0, Math.min(CAMPAIGN_LENGTH - 1, level - 1))],
     rng = random(config.seed);
-  return Array.from({ length: BALANCE.columns * BALANCE.rows }, (_, id) => {
+  const blocks = Array.from({ length: BALANCE.columns * BALANCE.rows }, (_, id) => {
     const row = Math.floor(id / BALANCE.columns),
       col = id % BALANCE.columns;
     const vein =
@@ -119,9 +122,7 @@ export function generateLevel(level) {
     let type =
       roll < config.bombRate
         ? "bomb"
-        : roll < config.bombRate + config.gemRate
-          ? "gem"
-          : "normal";
+        : "normal";
     if (config.treasure) {
       if (rng() < config.goldRate) material = 4;
     } else if (vein && rng() < 0.35) material = config.id > 65 ? 5 : 4;
@@ -137,13 +138,33 @@ export function generateLevel(level) {
     );
     // Armoured floors keep even soft seams in every eighth mine challenging;
     // otherwise a shop-tier jump could trivialise an entire trial (e.g. #24).
-    const expectedPower = Math.round(2 + Math.log2(config.id) * 3);
-    const armourHp = config.challenge
-      ? Math.ceil(damage(shopTier({ level: config.id }), expectedPower) * 1.25)
-      : 0;
+    const expectedPower = Math.floor(Math.log2(config.id + 1));
+    const armourFactor = config.challenge
+      ? 1.6 + Math.max(0, config.id - 16) * 0.03
+      : config.boss ? 1.2 : row >= 6 ? config.treasure ? 0.3 : 0.8 : 0;
+    const armourHp = Math.ceil(
+      damage(recommendedTier(config.id), expectedPower) * armourFactor,
+    );
     const maxHp = Math.max(geologicalHp, armourHp);
-    return { id, row, col, material, type, hp: maxHp, maxHp, alive: true };
+    const minTier =
+      row >= 6 || config.challenge || config.boss
+        ? recommendedTier(config.id)
+        : shopTier({ level: config.id });
+    return { id, row, col, material, type, minTier, hp: maxHp, maxHp, alive: true };
   });
+  // Deep, deterministic diamond seams: no extra diamonds from decorative quartz.
+  const seamRandom = random(config.seed ^ 0x4d1a);
+  const candidates = blocks
+    .filter((b) => b.row >= 5 && b.type !== "bomb")
+    .map((b) => ({ block: b, order: seamRandom() }))
+    .sort((a, b) => a.order - b.order);
+  for (const { block } of candidates.slice(0, config.diamonds)) {
+    block.type = "gem";
+    block.minTier = recommendedTier(config.id);
+    block.maxHp = Math.ceil(block.maxHp * 1.65);
+    block.hp = block.maxHp;
+  }
+  return blocks;
 }
 export function getBoosts(s) {
   const owned = new Set(s.trophies || []),
@@ -157,14 +178,28 @@ export function getBoosts(s) {
   return total;
 }
 export const shopTier = (s) => Math.min(7, 1 + Math.floor((s.level - 1) / 20));
+export function recommendedTier(level) {
+  const config = LEVELS[level - 1];
+  const extra = level === 1 ? 0 : config.challenge || config.boss ? 2 : 1;
+  return Math.min(10, shopTier({ level }) + extra);
+}
+export const isHardMine = (s) =>
+  LEVELS[s.level - 1].challenge || LEVELS[s.level - 1].boss;
+export function attemptBudget(s) {
+  if (s.level === 1) return BALANCE.startingCoins;
+  return Math.ceil(
+    buyCost({ ...s, purchasesThisMine: 0 }) * (isHardMine(s) ? 48 : 12),
+  );
+}
 export const rescueTier = (s) => Math.max(1, shopTier(s) - 1);
 export const buyCost = (s) =>
   Math.round(
     (25 + (s.level - 1) * 1.4) *
+      (1 + (s.level - 1) * 0.002) *
       (1 + Math.min(8, s.purchasesThisMine || 0) * 0.035) *
       (1 - getBoosts(s).discount),
   );
-export const upgradeCost = (s) => Math.round(90 * 1.27 ** s.power);
+export const upgradeCost = (s) => 3 + Math.floor(s.power * 1.5);
 export const forgeCost = (s) => 5 + Math.floor((s.level - 1) / 20) * 2;
 export const forgeTier = (s) => Math.min(BALANCE.maxTier, shopTier(s) + 1);
 export const damage = (tier, power = 0, multiplier = 1) =>
@@ -183,7 +218,7 @@ export function blockReward(s, block) {
   const level = LEVELS[s.level - 1];
   return (
     Math.round(
-      (MATERIALS[block.material].reward * 0.65 + 1) *
+      (MATERIALS[block.material].reward * 1.1 + 1) *
         level.incomeScale *
         level.rewardFactor *
         getBoosts(s).gold,
@@ -238,7 +273,7 @@ export function restoreState(raw) {
   const blocks = generateLevel(s.level);
   s.boss = createBoss(s.level);
   if (
-    [2, 3].includes(raw.version) &&
+    [2, 3, 4].includes(raw.version) &&
     raw.board?.level === s.level &&
     Array.isArray(raw.board.hp) &&
     raw.board.hp.length === blocks.length
@@ -259,13 +294,31 @@ export function restoreState(raw) {
       spent: integer(raw.board.spent, 0, 0, 1e9),
       throws: integer(raw.board.throws, 0, 0, 1e6),
     };
-    if (s.boss && raw.version === 3 && raw.boss?.level === s.level) {
+    if (s.boss && raw.version >= 3 && raw.boss?.level === s.level) {
       s.boss.hp = integer(raw.boss.hp, s.boss.maxHp, 0, s.boss.maxHp);
       s.boss.hits = integer(raw.boss.hits, 0, 0, 1e6);
     }
     // Preserve already cleared v2 mines, without inventing a trophy for a boss that never existed.
     if (s.boss && raw.version === 2 && hp.every((v) => v === 0)) s.boss.hp = 0;
     s.levelComplete = hp.every((v) => v === 0) && (!s.boss || s.boss.hp === 0);
+  }
+  s.rescueUsed = raw.rescueUsed === true;
+  s.attemptNumber = integer(raw.attemptNumber, 1, 1, 1e6);
+  if (
+    raw.version === 4 && raw.entry?.level === s.level &&
+    Array.isArray(raw.entry.inventory) &&
+    raw.entry.inventory.length === BALANCE.capacity
+  ) {
+    s.entry = snapshotEntry({
+      ...s,
+      coins: integer(raw.entry.coins, s.coins, 0, 1e9),
+      gems: integer(raw.entry.gems, s.gems, 0, 1e6),
+      power: integer(raw.entry.power, s.power, 0, BALANCE.maxPower),
+      runs: integer(raw.entry.runs, s.runs, 0, 1e6),
+      inventory: raw.entry.inventory.map((v) =>
+        Number.isInteger(v) && v >= 1 && v <= BALANCE.maxTier ? v : null,
+      ),
+    });
   }
   return s;
 }
@@ -285,6 +338,13 @@ export function loadState(storage) {
   return createState();
 }
 export function openBoard(s) {
+  if (!s.entry || s.entry.level !== s.level) {
+    // A checkpoint needs enough finite supplies for a fair replay. Only a new
+    // mine receives this minimum; reloads retain the existing entry and wallet.
+    if (!s.board || s.board.level !== s.level)
+      s.coins = Math.max(s.coins, attemptBudget(s));
+    s.entry = snapshotEntry(s);
+  }
   const blocks = generateLevel(s.level);
   if (s.board?.level === s.level)
     blocks.forEach((b, i) => {
@@ -330,9 +390,9 @@ export function buyTool(s) {
 }
 export function upgrade(s) {
   const cost = upgradeCost(s);
-  if (s.levelComplete || s.power >= BALANCE.maxPower || s.coins < cost)
+  if (s.levelComplete || s.power >= BALANCE.maxPower || s.gems < cost)
     return false;
-  s.coins -= cost;
+  s.gems -= cost;
   s.power++;
   return true;
 }
@@ -355,17 +415,56 @@ export function merge(s, from, to) {
   s.inventory[from] = null;
   return true;
 }
-export function canRescue(s, active = 0) {
+function snapshotEntry(s) {
+  // Old saves have no checkpoint. A fair replay is funded without generating
+  // emergency picks or changing that save's current loot and equipment.
+  return {
+    level: s.level,
+    coins: Math.max(s.coins, attemptBudget(s)),
+    gems: s.gems,
+    power: s.power,
+    runs: s.runs,
+    inventory: [...s.inventory],
+  };
+}
+export function isStranded(s, active = 0) {
   return (
     !s.levelComplete &&
     active === 0 &&
     !s.inventory.some(Boolean) &&
-    s.coins < buyCost(s)
+    s.coins < buyCost(s) &&
+    s.gems < forgeCost(s)
   );
+}
+export function canRescue(s, active = 0) {
+  return isStranded(s, active) && !isHardMine(s) && !s.rescueUsed;
+}
+export function needsRestart(s, active = 0) {
+  return isStranded(s, active) && (isHardMine(s) || s.rescueUsed);
+}
+export function restartAttempt(s, active = 0) {
+  if (!needsRestart(s, active)) return false;
+  const entry = s.entry?.level === s.level ? s.entry : snapshotEntry(s);
+  Object.assign(s, {
+    coins: entry.coins,
+    gems: entry.gems,
+    power: entry.power,
+    runs: entry.runs,
+    inventory: [...entry.inventory],
+    entry: { ...entry, inventory: [...entry.inventory] },
+    board: null,
+    boss: null,
+    levelComplete: false,
+    purchasesThisMine: 0,
+    rescueUsed: false,
+    attemptNumber: Math.min(1e6, s.attemptNumber + 1),
+  });
+  return true;
 }
 export function rescue(s, active = 0) {
   if (!canRescue(s, active)) return false;
   s.inventory[0] = rescueTier(s);
+  s.rescueUsed = true;
   return true;
 }
 export function launch(s, index, active = 0) {
@@ -396,7 +495,7 @@ function completeLevel(s) {
   if (config.challenge) s.gems++;
   let trophy = null;
   if (config.boss) {
-    s.gems += 4 + Math.floor(s.level / 30);
+    s.gems += 1;
     if (!s.trophies.includes(config.trophy.level)) {
       s.trophies.push(config.trophy.level);
       trophy = config.trophy;
@@ -404,7 +503,7 @@ function completeLevel(s) {
   }
   return { completed: true, trophy };
 }
-export function hitBlock(s, blocks, id, amount) {
+export function hitBlock(s, blocks, id, amount, tier = 1) {
   const empty = {
     destroyed: [],
     completed: false,
@@ -414,6 +513,7 @@ export function hitBlock(s, blocks, id, amount) {
     chainCoins: 0,
     trophy: null,
     bossRevealed: false,
+    blocked: false,
   };
   if (
     s.levelComplete ||
@@ -422,6 +522,7 @@ export function hitBlock(s, blocks, id, amount) {
     amount <= 0
   )
     return empty;
+  if (tier < blocks[id].minTier) return { ...empty, blocked: true };
   const coinsBefore = s.coins,
     gemsBefore = s.gems,
     destroyed = [],
@@ -436,7 +537,7 @@ export function hitBlock(s, blocks, id, amount) {
     b.alive = false;
     destroyed.push(b);
     s.coins += blockReward(s, b);
-    if (b.type === "gem" || b.material === 5) s.gems++;
+    if (b.type === "gem") s.gems++;
     if (b.type === "bomb")
       for (const n of blocks)
         if (
@@ -466,9 +567,10 @@ export function hitBlock(s, blocks, id, amount) {
     checkpointCoins,
     chainCoins,
     bossRevealed: bossActive(s),
+    blocked: false,
   };
 }
-export function hitBoss(s, amount) {
+export function hitBoss(s, amount, tier = 1) {
   if (
     !bossActive(s) ||
     !Number.isFinite(amount) ||
@@ -476,6 +578,8 @@ export function hitBoss(s, amount) {
     s.levelComplete
   )
     return { damage: 0, completed: false, trophy: null, coins: 0 };
+  if (tier < recommendedTier(s.level))
+    return { damage: 0, completed: false, trophy: null, coins: 0, blocked: true };
   const weak = bossVulnerable(s),
     dealt = Math.max(1, Math.round(amount * (weak ? 1.65 : 0.55)));
   s.boss.hp = Math.max(0, s.boss.hp - dealt);
@@ -495,10 +599,12 @@ export function nextLevel(s) {
     s.campaignWins++;
     s.level = 1;
   } else s.level++;
-  if (!s.inventory.some(Boolean)) s.inventory[0] = Math.max(2, shopTier(s));
   s.board = null;
   s.boss = null;
   s.purchasesThisMine = 0;
   s.levelComplete = false;
+  s.entry = null;
+  s.rescueUsed = false;
+  s.attemptNumber = 1;
   return true;
 }

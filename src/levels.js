@@ -153,12 +153,12 @@ export const LEVELS = Array.from({ length: CAMPAIGN_LENGTH }, (_, index) => {
     depthScale: (1 + index * 0.025) * 1.013 ** index,
     hpFactor: (challenge ? 2.75 : treasure ? 0.48 : 1) * (trophy ? 0.85 : 1),
     hpBonus: Math.floor(index / 12),
-    incomeScale: 1 + index * 0.018,
+    incomeScale: (1 + index * 0.008) * (1 + 0.2 * Math.exp(-index / 22)),
     goldRate: treasure ? 0.57 : 0.035 + (index % 15) * 0.0015,
-    gemRate: treasure ? 0.035 : 0.075 + (index % 5) * 0.009,
+    diamonds: challenge || trophy ? 2 : id % 6 === 0 ? 2 : 1,
     bombRate: challenge ? 0.025 : treasure ? 0.085 : 0.05,
     rewardFactor: treasure ? 1.8 : challenge ? 1.12 : 1,
-    bonus: Math.round((80 + id * 8) * (treasure ? 1.25 : challenge ? 1.15 : 1)),
+    bonus: Math.round((80 + id * 4) * (treasure ? 1.25 : challenge ? 1.15 : 1)),
     bossHp: trophy
       ? Math.ceil(
           180 *

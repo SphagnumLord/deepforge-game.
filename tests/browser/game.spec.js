@@ -56,7 +56,7 @@ test("merge, buy, upgrade, real mining and damaged blocks persist through reload
   page,
   isMobile,
 }) => {
-  await seed(page);
+  await seed(page, { gems: 3 });
   await start(page);
   await slot(page, 0).click();
   await slot(page, 1).click();
@@ -92,7 +92,9 @@ test("merge, buy, upgrade, real mining and damaged blocks persist through reload
 test("broke players recover without ads or resetting their progress", async ({
   page,
 }) => {
-  await seed(page, { coins: 0, inventory: Array(12).fill(null) });
+  const save = createState();
+  openBoard(save);
+  await seed(page, { ...save, coins: 0, inventory: Array(12).fill(null), tutorialDone: true });
   await page.goto("/");
   await expect(page.locator("#rescue")).toBeVisible();
   await expect(page.locator("#buy")).toBeDisabled();
@@ -187,6 +189,7 @@ test("cleared final mine restores without duplicate payout and starts a new camp
   const save = { ...createState(), level: 130, best: 130 };
   openBoard(save);
   save.board.hp.fill(0);
+  save.coins = 180;
   await seed(page, { ...save, tutorialDone: true });
   await page.goto("/");
   await expect(page.locator("#winTitle")).toHaveText("Сердце горы найдено!");
@@ -244,7 +247,7 @@ test("a real mining hit reveals the guardian, victory earns a persistent trophy 
   await page.locator("#nextLevel").click();
   await expect(page.locator("#level")).toHaveText("16");
   await slot(page, 1).click();
-  await expect(page.locator("#selectedInfo")).toContainText("урон 17");
+  await expect(page.locator("#selectedInfo")).toContainText("урон 26");
   await page.reload();
   await expect(page.locator('[data-trophy="15"]')).toBeVisible();
   expect(
@@ -263,7 +266,7 @@ test("guardian health and armour phase survive reloading in the middle of a figh
     level: 30,
     best: 30,
     power: 6,
-    inventory: [3, 3, ...Array(10).fill(null)],
+    inventory: [4, 4, ...Array(10).fill(null)],
   };
   openBoard(save);
   save.board.hp.fill(0);
@@ -452,4 +455,148 @@ test("Yandex adapter restores cloud, pauses for ads, grants one reward and repor
   await expect
     .poll(() => page.evaluate(() => window.sdkCalls.writes.length))
     .toBeGreaterThan(0);
+});
+
+test("one normal rescue survives reload; losing that pick starts a clean second attempt", async ({ page }) => {
+  const save = createState();
+  openBoard(save);
+  save.coins = 0;
+  save.inventory.fill(null);
+  save.board.hp[0] = 0;
+  await seed(page, { ...save, tutorialDone: true });
+  await page.goto("/");
+  await expect(page.locator("#rescue")).toBeVisible();
+  await page.locator("#rescue").click();
+  await page.reload();
+  await expect(slot(page, 0)).toHaveAttribute("data-tier", "1");
+  await expect(page.locator("#rescue")).not.toBeVisible();
+  await expect(page.locator("#rescueRule")).toContainText("использована");
+  await slot(page, 0).click();
+  await page.locator("#game").click({ position: { x: 65, y: 65 } });
+  await page.locator("#pause").click();
+  await page.reload();
+  await expect(page.locator("#game")).toHaveAttribute("data-attempt", "2");
+  await expect(page.locator("#game")).toHaveAttribute("data-destroyed", "0");
+  await expect(page.locator("#coins")).toHaveText("180");
+  await expect(page.locator("#rescueRule")).toContainText("Одна аварийная");
+  const restored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE);
+  expect(restored.inventory).toEqual(save.entry.inventory);
+  expect(restored.rescueUsed).toBe(false);
+});
+
+test("an exhausted trial restarts immediately and never offers a free pick", async ({ page }) => {
+  const save = { ...createState(), level: 8, best: 8 };
+  openBoard(save);
+  const starting = save.coins;
+  save.coins = 0;
+  save.inventory.fill(null);
+  save.board.hp[0] = 0;
+  await seed(page, { ...save, tutorialDone: true });
+  await page.goto("/");
+  await expect(page.locator("#game")).toHaveAttribute("data-attempt", "2");
+  await expect(page.locator("#game")).toHaveAttribute("data-destroyed", "0");
+  await expect(page.locator("#rescue")).not.toBeVisible();
+  await expect(page.locator("#rescueRule")).toContainText("Без аварийных");
+  const state = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE);
+  expect(state.coins).toBe(starting);
+  expect(state.inventory).toEqual(save.entry.inventory);
+  await page.reload();
+  await expect(page.locator("#game")).toHaveAttribute("data-attempt", "2");
+});
+
+test("strength spends diamonds and stays unavailable when only gold remains", async ({ page }) => {
+  await seed(page, { coins: 1000, gems: 3 });
+  await start(page);
+  await page.locator("#upgrade").click();
+  await expect(page.locator("#gems")).toHaveText("0");
+  await expect(page.locator("#coins")).toHaveText("1 000");
+  await expect(page.locator("#damage")).toHaveText("3");
+  await expect(page.locator("#upgrade")).toBeDisabled();
+  await page.reload();
+  await expect(page.locator("#damage")).toHaveText("3");
+  await expect(page.locator("#upgrade")).toBeDisabled();
+});
+
+test("real trial collisions require upgraded metal even with maximum strength", async ({ page }) => {
+  await seed(page, { level: 8, best: 8, power: 60, coins: 5000, inventory: [1, 3, ...Array(10).fill(null)] });
+  await page.goto("/");
+  await slot(page, 0).click();
+  const box = await page.locator("#game").boundingBox();
+  await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } });
+  await expect(page.locator("#game")).toHaveAttribute("data-blocked-hits", /[1-9]/);
+  await expect(page.locator("#game")).toHaveAttribute("data-destroyed", "0");
+  await expect(page.locator("#hint")).toContainText("требует кирку ур. 3+");
+  await slot(page, 1).click();
+  await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } });
+  await expect(page.locator("#game")).not.toHaveAttribute("data-destroyed", "0");
+});
+
+async function mistChanges(page) {
+  return page.evaluate(async () => {
+    const canvas = document.getElementById("game"), c = canvas.getContext("2d"), scale = canvas.width / 420;
+    const sample = () => c.getImageData(70 * scale, 8 * scale, 280 * scale, 105 * scale).data;
+    const before = sample();
+    for (let i = 0; i < 18; i++) await new Promise(requestAnimationFrame);
+    const after = sample();
+    return before.reduce((count, value, i) => count + (value !== after[i] ? 1 : 0), 0);
+  });
+}
+
+test("lamp mist moves gently, freezes on pause and respects reduced motion", async ({ page }) => {
+  await seed(page);
+  await start(page);
+  expect(await mistChanges(page)).toBeGreaterThan(0);
+  await page.locator("#pause").click();
+  expect(await mistChanges(page)).toBe(0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await expect(page.locator("#buy")).toBeEnabled();
+  expect(await mistChanges(page)).toBe(0);
+});
+
+test("a real pick breaking produces a quiet crack on the effects bus", async ({ page }) => {
+  await page.addInitScript(() => {
+    const Native = window.AudioContext;
+    window.breakSources = 0;
+    window.breakRms = 0;
+    window.breakFinished = false;
+    window.AudioContext = class extends Native {
+      createGain(...args) {
+        const gain = super.createGain(...args);
+        this.firstGain ||= gain;
+        return gain;
+      }
+      createBufferSource(...args) {
+        const source = super.createBufferSource(...args), start = source.start.bind(source), context = this;
+        source.start = (...parameters) => {
+          window.breakSources++;
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 1024;
+          context.firstGain.connect(analyser);
+          let frames = 0;
+          const sample = () => {
+            const data = new Float32Array(analyser.fftSize);
+            analyser.getFloatTimeDomainData(data);
+            window.breakRms = Math.max(window.breakRms, Math.sqrt(data.reduce((sum, x) => sum + x * x, 0) / data.length));
+            if (++frames < 20) requestAnimationFrame(sample);
+            else { context.firstGain.disconnect(analyser); window.breakFinished = true; }
+          };
+          requestAnimationFrame(sample);
+          return start(...parameters);
+        };
+        return source;
+      }
+    };
+  });
+  await seed(page, { level: 8, best: 8, coins: 5000, musicMuted: true, inventory: [1, ...Array(11).fill(null)] });
+  await page.goto("/");
+  await slot(page, 0).click();
+  const box = await page.locator("#game").boundingBox();
+  await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } });
+  await page.waitForFunction(() => window.breakFinished);
+  expect(await page.evaluate(() => window.breakSources)).toBe(1);
+  const rms = await page.evaluate(() => window.breakRms);
+  expect(rms).toBeGreaterThan(0.00001);
+  expect(rms).toBeLessThan(0.025);
+  await expect(page.locator("#game")).toHaveAttribute("data-broken-tools", "1");
 });

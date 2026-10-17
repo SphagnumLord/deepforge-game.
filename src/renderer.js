@@ -1,6 +1,7 @@
 import { LEVELS, MATERIALS, TROPHIES, bossActive } from "./core.js";
 import { FIELD, blockRect } from "./physics.js";
 import { drawTool, loadToolArt, drawTrophy, drawBoss } from "./art.js";
+import { createRockTextures, createLampMist } from "./geology.js";
 
 export class MineRenderer {
   constructor(canvas) {
@@ -9,6 +10,8 @@ export class MineRenderer {
     this.particles = [];
     this.time = 0;
     this.ready = loadToolArt();
+    this.rocks = createRockTextures();
+    this.mist = createLampMist();
     const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
     canvas.width = FIELD.width * dpr;
     canvas.height = FIELD.height * dpr;
@@ -67,6 +70,16 @@ export class MineRenderer {
     light.addColorStop(1, "#edc27900");
     c.fillStyle = light;
     c.fillRect(0, 0, w, 230);
+    c.save();
+    c.globalCompositeOperation = "screen";
+    c.globalAlpha = 0.66;
+    const drift = this.reducedMotion ? 0 : this.time / 190;
+    for (let n = 0; n < 4; n++) {
+      const x = 126 + n * 33 + Math.sin(drift + n * 2.1) * 17;
+      const y = 22 + n * 8 + Math.cos(drift * 0.7 + n) * 8;
+      c.drawImage(this.mist, x - 58, y, 146 + n * 8, 56 + n * 5);
+    }
+    c.restore();
     c.strokeStyle = "#8b7953";
     c.lineWidth = 1;
     c.beginPath();
@@ -153,6 +166,10 @@ export class MineRenderer {
       c.beginPath();
       c.roundRect(x + 1, y + 1, bw - 3, bh - 3, 3);
       c.fill();
+      c.save();
+      c.clip();
+      c.drawImage(this.rocks[b.material][(state.level * 13 + b.id * 7) % 6], x + 1, y + 1, bw - 3, bh - 3);
+      c.restore();
       c.fillStyle = m.face;
       c.globalAlpha = 0.8;
       c.fillRect(x + 3, y + 2, bw - 7, 3);
@@ -161,17 +178,7 @@ export class MineRenderer {
       c.fillRect(x + 3, y + 6, 3, bh - 12);
       c.fillStyle = "#00000025";
       c.fillRect(x + 2, y + bh - 7, bw - 5, 4);
-      if (b.material === 4) {
-        c.strokeStyle = "#e5c272";
-        c.lineWidth = 2.5;
-        c.beginPath();
-        c.moveTo(x + 9, y + 16);
-        c.lineTo(x + 17, y + 11);
-        c.lineTo(x + 23, y + 18);
-        c.lineTo(x + 43, y + 12);
-        c.stroke();
-      }
-      if (b.type === "gem" || b.material === 5) {
+      if (b.type === "gem") {
         c.fillStyle = "#9cddc9";
         c.beginPath();
         c.moveTo(x + 27, y + 7);
@@ -204,7 +211,20 @@ export class MineRenderer {
       } else {
         c.fillStyle = b.material === 4 ? "#f3d392" : "#e2d8be";
         c.font = '600 11px "Segoe UI",sans-serif';
+        c.save();
+        c.shadowColor = "#101a20";
+        c.shadowBlur = 3;
         c.fillText(String(Math.ceil(b.hp)), x + 27, y + 24);
+        c.restore();
+      }
+      if (b.minTier > 1) {
+        c.fillStyle = "#101e28bb";
+        c.fillRect(x + bw - 18, y + 3, 14, 9);
+        c.fillStyle = "#d2d0b2";
+        c.font = '6px "Segoe UI",sans-serif';
+        c.textAlign = "right";
+        c.fillText(`${b.minTier}+`, x + bw - 6, y + 10);
+        c.textAlign = "center";
       }
       if (b.hp < b.maxHp) {
         c.strokeStyle = "#151e27aa";

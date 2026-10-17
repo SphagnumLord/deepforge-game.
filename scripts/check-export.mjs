@@ -57,8 +57,8 @@ async function play(page, mobile) {
   );
   await page.locator("#buy").click();
   assert.equal(await page.locator("#coins").textContent(), "155");
-  await page.locator("#upgrade").click();
-  assert.equal(await page.locator("#damage").textContent(), "3");
+  assert.equal(await page.locator("#upgrade").isDisabled(), true);
+  assert.equal(await page.locator("#damage").textContent(), "2");
   await page.locator(".slot").nth(1).click();
   if (mobile) await page.locator("#dropSelected").click();
   else await page.locator("#game").click({ position: { x: 250, y: 85 } });
@@ -86,7 +86,7 @@ try {
         STORAGE,
       );
       assert(saved.board.hp.some((hp) => hp === 0));
-      assert.equal(saved.power, 1);
+      assert.equal(saved.power, 0);
       await context.setOffline(false);
       await page.reload();
       await context.setOffline(true);
@@ -108,7 +108,7 @@ try {
         "the index must never load external assets",
       );
       console.log(
-        `PASS: downloaded index at ${width}px starts, merges, buys, upgrades and mines offline; progress survives reload.`,
+        `PASS: downloaded index at ${width}px starts, merges, buys and mines offline; progress survives reload.`,
       );
     } finally {
       await context.close();

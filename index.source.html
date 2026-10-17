@@ -61,7 +61,7 @@
             </div>
             <div class="wallet-item gem-wallet">
               <span class="gem-icon">◇</span
-              ><span><small>КРИСТАЛЛЫ</small><b id="gems">0</b></span>
+              ><span><small>АЛМАЗЫ</small><b id="gems">0</b></span>
             </div>
           </div>
         </section>
@@ -149,6 +149,7 @@
               </div>
             </div>
             <div class="mine-bottom">
+              <div class="attempt-caption"><span>ПОПЫТКА <b id="attemptNumber">1</b></span><span>Плотная порода: кирка <b id="tierNeed">1</b>+</span></div>
               <div class="progress-caption">
                 <span>ИССЛЕДОВАНО</span><b id="remaining">0 / 70 блоков</b>
               </div>
@@ -163,6 +164,7 @@
               <p id="hint" role="status">
                 Выбери кирку в мастерской и нажми на шахту.
               </p>
+              <p id="rescueRule" class="rescue-rule"></p>
             </div>
           </section>
           <aside class="sidebar">
@@ -204,25 +206,25 @@
               </button>
               <button id="forge" class="button forge">
                 <span>◇ Ковка · уровень <b id="forgeTier">2</b></span
-                ><span><b id="forgeCost">5</b> кристаллов</span>
+                ><span><b id="forgeCost">5</b> алмазов</span>
               </button>
               <button id="rescue" class="button rescue hidden">
-                Получить бесплатную кирку <span>↗</span>
+                Аварийная кирка · один раз <span>↗</span>
               </button>
               <div class="upgrade">
                 <div class="upgrade-top">
                   <span class="upgrade-icon">↟</span>
                   <div>
                     <h3>Сила удара</h3>
-                    <p>Усилить каждый инструмент</p>
+                    <p>За редкие алмазы · уровень кирки тоже важен</p>
                   </div>
                   <b class="power-level">+<span id="damage">2</span></b>
                 </div>
                 <button id="upgrade" class="button secondary">
                   <span>Улучшить силу</span
                   ><span class="price"
-                    ><span class="tiny-coin">◆</span>
-                    <b id="upgradeCost">90</b></span
+                    ><span class="tiny-diamond">◇</span>
+                    <b id="upgradeCost">3</b></span
                   >
                 </button>
               </div>
@@ -263,7 +265,7 @@
             <div class="field-notes">
               <span class="note-star">✳</span>
               <p>
-                Бомбы разрушают соседние блоки.<br />Кристаллы любят терпеливых.
+                Бомбы разрушают соседние блоки.<br />Алмазы спрятаны в плотных глубоких жилах.
               </p>
             </div>
           </aside>
@@ -311,8 +313,8 @@
           добывают до пяти инструментов.
         </li>
         <li>
-          <b>Открой.</b> Собирай монеты, усиливай удар и доберись до сердца
-          горы.
+          <b>Усиль.</b> Плотная порода требует кирку указанного уровня.
+          Объединяй инструменты; редкие алмазы из глубоких жил трать на силу или ковку.
         </li>
         <li>
           <b>Подготовься.</b> Каждая восьмая шахта — испытание. Перед боссом —
@@ -321,8 +323,10 @@
         </li>
       </ol>
       <p class="safety-note">
-        Кирки закончились? Купи новую или получи бесплатную, если монет не
-        осталось.
+        На обычной шахте доступна одна аварийная кирка на попытку.
+        На испытаниях и у боссов помощи нет. Когда запасов не останется,
+        шахта начнётся заново: стартовое снаряжение вернётся, находки попытки потеряются.
+        Каждая новая шахта получает минимальный бюджет на снабжение.
       </p>
       <button id="tutorialStart" class="button primary">
         Начать экспедицию →

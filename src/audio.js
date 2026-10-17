@@ -193,6 +193,32 @@ export class GameAudio {
       this.context.state !== "running"
     )
       return;
+    if (kind === "toolBreak") {
+      const c = this.context, start = c.currentTime;
+      const noise = c.createBuffer(1, Math.floor(c.sampleRate * 0.16), c.sampleRate);
+      const samples = noise.getChannelData(0);
+      for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length);
+      const source = c.createBufferSource(), filter = c.createBiquadFilter(), gain = c.createGain();
+      source.buffer = noise;
+      filter.type = "bandpass";
+      filter.frequency.value = 1150;
+      filter.Q.value = 0.65;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.022, start + 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.15);
+      source.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.effects);
+      source.start(start);
+      this.voices.add(source);
+      source.onended = () => {
+        this.voices.delete(source);
+        source.disconnect(); filter.disconnect(); gain.disconnect();
+      };
+      this.tone(185, start, 0.13, 0.008, this.effects, "triangle", 0.004);
+      this.tone(740, start + 0.025, 0.1, 0.003, this.effects, "sine", 0.004);
+      return;
+    }
     const notes = {
       hit: [130],
       break: [240, 360],

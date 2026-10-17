@@ -23,7 +23,7 @@ import { simulateCampaign } from "../scripts/simulate-economy.mjs";
 
 function clearMine(s) {
   const blocks = openBoard(s);
-  for (const b of blocks) if (b.alive) hitBlock(s, blocks, b.id, 1e7);
+  for (const b of blocks) if (b.alive) hitBlock(s, blocks, b.id, 1e7, 12);
   return blocks;
 }
 const totalHp = (n) => generateLevel(n).reduce((sum, b) => sum + b.maxHp, 0);
@@ -68,41 +68,41 @@ test("clearing a guardian chamber reveals the boss but pays no completion reward
   const s = createState();
   s.level = 15;
   openBoard(s);
-  assert.equal(hitBoss(s, 10000).damage, 0);
+  assert.equal(hitBoss(s, 10000, 12).damage, 0);
   clearMine(s);
   assert.equal(bossActive(s), true);
   assert.equal(s.levelComplete, false);
   assert.deepEqual(s.trophies, []);
   const before = s.coins;
-  for (let i = 0; i < 3; i++) assert.equal(hitBoss(s, 10).damage, 6);
+  for (let i = 0; i < 3; i++) assert.equal(hitBoss(s, 10, 12).damage, 6);
   assert.equal(bossVulnerable(s), true);
-  assert.equal(hitBoss(s, 10).damage, 17);
+  assert.equal(hitBoss(s, 10, 12).damage, 17);
   assert.equal(bossVulnerable(s), false);
-  const result = hitBoss(s, 10000);
+  const result = hitBoss(s, 10000, 12);
   assert.equal(result.completed, true);
   assert.equal(result.trophy.level, 15);
   assert.equal(s.coins - before, LEVELS[14].bonus);
   assert.deepEqual(s.trophies, [15]);
-  assert.equal(hitBoss(s, 10000).coins, 0);
+  assert.equal(hitBoss(s, 10000, 12).coins, 0);
   assert.deepEqual(s.trophies, [15]);
 });
 test("a partially defeated boss, armour cycle and earned trophy survive reload without duplicate rewards", () => {
   const s = createState();
   s.level = 30;
   clearMine(s);
-  hitBoss(s, 50);
-  hitBoss(s, 50);
+  hitBoss(s, 50, 12);
+  hitBoss(s, 50, 12);
   const restored = restoreState(JSON.parse(JSON.stringify(s)));
   openBoard(restored);
   assert.equal(restored.boss.hp, s.boss.hp);
   assert.equal(restored.boss.hits, 2);
   assert.equal(bossActive(restored), true);
-  hitBoss(restored, 1e7);
+  hitBoss(restored, 1e7, 12);
   const coins = restored.coins;
   const won = restoreState(JSON.parse(JSON.stringify(restored)));
   openBoard(won);
   assert.equal(won.levelComplete, true);
-  assert.equal(hitBoss(won, 1e7).coins, 0);
+  assert.equal(hitBoss(won, 1e7, 12).coins, 0);
   assert.equal(won.coins, coins);
   assert.deepEqual(won.trophies, [30]);
   nextLevel(won);
@@ -143,7 +143,7 @@ test("v2 progress migrates in place without replaying a completed old mine or in
   s.coins = 1234;
   const restored = restoreState(s);
   openBoard(restored);
-  assert.equal(restored.version, 3);
+  assert.equal(restored.version, 4);
   assert.equal(restored.levelComplete, true);
   assert.equal(restored.coins, 1234);
   assert.deepEqual(restored.trophies, []);
@@ -169,7 +169,7 @@ test("supply tiers scale to late mines and per-mine scarcity resets at the next 
 test("checkpoint and chain rewards survive save/reload and cannot be paid a second time", () => {
   const s = createState();
   const board = openBoard(s);
-  for (let i = 0; i < 10; i++) hitBlock(s, board, i, 1e6);
+  for (let i = 0; i < 10; i++) hitBlock(s, board, i, 1e6, 12);
   assert.ok(s.board.checkpoints >= 1);
   const restored = restoreState(s),
     b = openBoard(restored),
@@ -178,17 +178,17 @@ test("checkpoint and chain rewards survive save/reload and cannot be paid a seco
   assert.equal(restored.coins, coins);
   assert.equal(restored.board.checkpoints, s.board.checkpoints);
 });
-test("budget simulations complete all 130 mines without forced rescue at 50–80% useful contacts", () => {
-  for (const efficiency of [0.5, 0.65, 0.8]) {
+test("planning and merging can fund all 130 mines at 65–80% useful contacts", () => {
+  for (const efficiency of [0.65, 0.8]) {
     const report = simulateCampaign(efficiency);
     assert.equal(report.length, 130);
     assert.equal(
       report.reduce((n, r) => n + r.rescues, 0),
       0,
     );
-    assert.ok(report.every((r) => r.wallet >= 0 && r.throws <= 30));
-    assert.ok(report.at(-1).wallet < 100000);
-    assert.ok(report.at(-1).power < 35);
+    assert.ok(report.every((r) => r.completed && r.wallet >= 0 && r.throws <= 30));
+    assert.ok(report.at(-1).wallet < 200000);
+    assert.ok(report.at(-1).power < 20);
   }
 });
 test("every eighth mine takes materially more tools than surrounding normal mines in the budget model", () => {
