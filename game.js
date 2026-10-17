@@ -1,28 +1,699 @@
-(()=>{'use strict';
-const $=id=>document.getElementById(id),canvas=$('game'),ctx=canvas.getContext('2d');
-const W=420,H=520,COLS=7,ROWS=10,CELL=60,TOP=135,STORAGE='deepforge-mvp-v1';
-const mats=[{name:'Земля',hp:2,color:'#9b603e',face:'#c38653',reward:5},{name:'Камень',hp:4,color:'#53657a',face:'#8091a5',reward:9},{name:'Руда',hp:7,color:'#47647a',face:'#5f9eb2',reward:14},{name:'Обсидиан',hp:12,color:'#454168',face:'#7067a3',reward:23}];
-let state,bricks=[],shots=[],particles=[],selected=-1,dragged=-1,last=performance.now(),total=0,destroyed=0,finished=false,now=0;
-function initial(){return {coins:180,gems:0,level:1,best:1,power:0,inventory:[1,1,1,1,2,null,null,null,null,null,null,null],runs:0};}
-function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE));if(x&&Number.isInteger(x.level)&&x.level>0&&Array.isArray(x.inventory)&&x.inventory.length===12)return {...initial(),...x,inventory:x.inventory.map(v=>Number.isInteger(v)&&v>0&&v<=12?v:null)};}catch(e){}return initial();}
-function save(){try{localStorage.setItem(STORAGE,JSON.stringify(state));}catch(e){}}
-function random(seed){let a=(seed>>>0);return()=>{a+=0x6d2b79f5;let t=a;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296;};}
-function makeLevel(){bricks=[];shots=[];particles=[];finished=false;selected=-1;const rng=random(state.level*8191+55);let difficulty=Math.min(3,Math.floor((state.level-1)/3));for(let row=0;row<ROWS;row++){for(let col=0;col<COLS;col++){let material=Math.min(3,Math.max(0,Math.floor((row/ROWS)*2+difficulty*.46+(rng()-.5)*1.4)));if(state.level===1)material=Math.min(material,1);const base=mats[material];let hp=base.hp+Math.floor((state.level-1)*.48);let type=rng()<.055?'bomb':rng()<.11?'gem':'normal';if(row===0&&col===3)type='bomb';bricks.push({col,row,x:col*CELL,y:TOP+row*38,w:CELL,h:38,material,hp,maxHp:hp,type,alive:true});}}total=bricks.length;destroyed=0;$('levelOverlay').classList.add('hidden');hint('Выбери кирку в арсенале и укажи точку сброса на шахте.');refresh();}
-function hint(message){$('hint').textContent=message;}
-function pickStyle(t){return t>=8?'💠':t>=6?'🔱':t>=4?'⚒️':'⛏️';}
-function buyCost(){return 25+Math.floor(state.runs*2.5);}
-function upCost(){return 90+state.power*85;}
-function damage(t){return Math.max(1,Math.floor(Math.pow(1.72,t-1)))*(state.power+2);}
-function refresh(){let inventory=$('inventory');inventory.innerHTML='';state.inventory.forEach((tier,i)=>{let slot=document.createElement('button');slot.className='slot '+(tier?'':'empty')+(selected===i?' selected':'');slot.setAttribute('aria-label',tier?`Кирка уровня ${tier}, ячейка ${i+1}`:`Пустая ячейка ${i+1}`);slot.dataset.index=i;slot.draggable=!!tier;if(tier){slot.innerHTML=`<span class="pick">${pickStyle(tier)}</span><small>LV ${tier}</small>`;}slot.addEventListener('click',()=>choose(i));slot.addEventListener('dragstart',e=>{dragged=i;e.dataTransfer.setData('text/plain',String(i));});slot.addEventListener('dragover',e=>e.preventDefault());slot.addEventListener('drop',e=>{e.preventDefault();let from=Number(e.dataTransfer.getData('text/plain'));if(Number.isInteger(from))merge(from,i);});inventory.appendChild(slot);});$('coins').textContent=state.coins.toLocaleString('ru-RU');$('gems').textContent=state.gems;$('level').textContent=String(state.level).padStart(2,'0');$('best').textContent=state.best;$('damage').textContent=state.power+2;$('capacity').textContent=state.inventory.filter(Boolean).length+'/12';$('remaining').textContent=destroyed+' / '+total;$('progressFill').style.width=(total?destroyed/total*100:0)+'%';$('buyCost').textContent='🪙 '+buyCost();$('upgradeCost').textContent='🪙 '+upCost();$('buy').disabled=state.coins<buyCost()||!state.inventory.includes(null)||finished;$('upgrade').disabled=state.coins<upCost()||finished;}
-function choose(i){if(finished)return;if(!state.inventory[i]){selected=-1;refresh();return;}if(selected>=0&&selected!==i){if(state.inventory[selected]===state.inventory[i]){merge(selected,i);return;}}selected=i;hint('Кирка выбрана! Нажми на шахту, чтобы бросить. Две одинаковые кирки можно объединить.');refresh();}
-function merge(from,to){if(finished||from===to)return;let a=state.inventory[from],b=state.inventory[to];if(a&&b&&a===b&&a<12){state.inventory[to]=a+1;state.inventory[from]=null;selected=to;burst(45+to%6*10,85,'#ffc85a',18);hint('Объединение! Получена кирка уровня '+(a+1));save();refresh();}else{selected=to;hint('Для объединения нужны две одинаковые кирки.');refresh();}}
-function breakBrick(b){if(!b.alive)return;b.alive=false;destroyed++;const mat=mats[b.material];let reward=mat.reward+state.level*2;state.coins+=reward;if(b.type==='gem'){state.gems+=1;reward+=10;state.coins+=10;}burst(b.x+30,b.y+19,b.type==='gem'?'#78f8f1':mat.face,12);if(b.type==='bomb'){burst(b.x+30,b.y+19,'#ffb241',32);for(const n of bricks){if(n.alive&&Math.abs(n.col-b.col)<=1&&Math.abs(n.row-b.row)<=1){n.hp-=Math.max(3,Math.ceil(n.maxHp*.8));if(n.hp<=0)breakBrick(n);}}}if(destroyed===total&&!finished){finished=true;let bonus=80+state.level*28;state.coins+=bonus;state.best=Math.max(state.level+1,state.best);$('winText').textContent='Награда за зачистку: 🪙 '+bonus+' · Можно продолжать добычу!';$('levelOverlay').classList.remove('hidden');hint('Шахта полностью зачищена!');}save();refresh();}
-function burst(x,y,color,n){for(let j=0;j<n;j++){let a=Math.random()*Math.PI*2,v=1+Math.random()*4;particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-2,life:30+Math.random()*20,color,size:2+Math.random()*4});}}
-function shoot(x){if(finished||selected<0||!state.inventory[selected]){hint('Сначала выбери кирку в мастерской.');return;}if(shots.length){hint('Подожди, пока предыдущая кирка закончит добычу.');return;}const tier=state.inventory[selected];state.inventory[selected]=null;selected=-1;shots.push({x:Math.max(15,Math.min(W-15,x)),y:22,vx:(Math.random()-.5)*1.2,vy:0,r:13,tier,power:damage(tier),hits:0,maxHits:5+Math.ceil(tier*.85),rotation:0});hint('Удар! Разрушай блоки, собирай ресурсы и покупай кирки.');save();refresh();}
-function applyHit(s,b){b.hp-=s.power;s.hits++;burst(s.x,s.y,'#ffd778',5);if(b.hp<=0)breakBrick(b);s.vy=-Math.min(5.3,2.7+s.tier*.15);s.vx+=(Math.random()-.5)*2;s.x+=s.vx*2;}
-function tick(dt){now+=dt;for(const s of shots){let steps=Math.max(1,Math.ceil(dt));for(let sub=0;sub<steps;sub++){s.vy=Math.min(10,s.vy+.22);s.y+=s.vy;s.x+=s.vx;s.rotation+=.09;if(s.x<s.r||s.x>W-s.r){s.x=Math.max(s.r,Math.min(W-s.r,s.x));s.vx*=-.8;}if(s.y<0)s.vy=Math.abs(s.vy);if(s.vy>0){let candidates=bricks.filter(b=>b.alive&&s.x+s.r>b.x+2&&s.x-s.r<b.x+b.w-2&&s.y+s.r>=b.y&&s.y-s.r<b.y+b.h);if(candidates.length){candidates.sort((a,b)=>a.y-b.y);s.y=candidates[0].y-s.r;applyHit(s,candidates[0]);}}if(s.hits>=s.maxHits||s.y>H+30){s.dead=true;break;}}}shots=shots.filter(s=>!s.dead);for(const p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=.13*dt;p.life-=dt;}particles=particles.filter(p=>p.life>0);}
-function draw(){ctx.clearRect(0,0,W,H);let bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#1b3153');bg.addColorStop(1,'#101a2c');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);for(let k=0;k<26;k++){const x=(k*101+29)%W,y=(k*67+21)%H;ctx.globalAlpha=.12;ctx.fillStyle='#b3c9f7';ctx.fillRect(x,y,2,2);}ctx.globalAlpha=1;ctx.fillStyle='#283c5a';ctx.fillRect(0,TOP-7,W,8);ctx.fillStyle='#4c6a8c';ctx.fillRect(0,TOP-7,W,3);ctx.textAlign='center';ctx.fillStyle='#9db9df';ctx.font='bold 13px system-ui';ctx.fillText('↓  ВЫБЕРИ ТОЧКУ СБРОСА  ↓',W/2,38);for(let i=0;i<COLS;i++){ctx.globalAlpha=.12;ctx.fillStyle='#c8dcff';ctx.fillRect(i*CELL+CELL/2,48,1,TOP-60);}ctx.globalAlpha=1;for(const b of bricks){if(!b.alive){ctx.fillStyle='#0f1a2d';ctx.fillRect(b.x+1,b.y+1,b.w-2,b.h-2);continue;}let m=mats[b.material];ctx.fillStyle=m.color;ctx.fillRect(b.x+1,b.y+1,b.w-2,b.h-2);ctx.fillStyle=m.face;ctx.fillRect(b.x+4,b.y+4,b.w-8,6);ctx.fillStyle='#ffffff12';ctx.fillRect(b.x+5,b.y+13,8,15);ctx.fillStyle='#0000002d';ctx.fillRect(b.x+1,b.y+29,b.w-2,8);if(b.type==='bomb'){ctx.font='24px system-ui';ctx.fillText('💣',b.x+30,b.y+28);}else if(b.type==='gem'){ctx.font='24px system-ui';ctx.fillText('💎',b.x+30,b.y+28);}else{ctx.fillStyle='#0005';ctx.font='bold 13px system-ui';ctx.fillText(String(Math.max(0,b.hp)),b.x+30,b.y+26);}if(b.hp<b.maxHp){ctx.fillStyle='#151b2b';ctx.fillRect(b.x+7,b.y+33,46,3);ctx.fillStyle='#76eabc';ctx.fillRect(b.x+7,b.y+33,46*Math.max(0,b.hp)/b.maxHp,3);}}for(const s of shots){ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.rotation);ctx.font=`${28+Math.min(10,s.tier)}px system-ui`;ctx.textAlign='center';ctx.fillText(pickStyle(s.tier),0,9);ctx.restore();}for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/50);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,p.size,p.size);}ctx.globalAlpha=1;ctx.fillStyle='#071423a8';ctx.fillRect(8,H-24,138,18);ctx.font='11px system-ui';ctx.textAlign='left';ctx.fillStyle='#c9e6f4';ctx.fillText('Глубина '+(state.level*100)+' м',17,H-11);}
-canvas.addEventListener('pointerdown',e=>{const r=canvas.getBoundingClientRect();let x=(e.clientX-r.left)*W/r.width;shoot(x);});$('buy').onclick=()=>{let cost=buyCost(),i=state.inventory.indexOf(null);if(i<0||state.coins<cost||finished)return;state.coins-=cost;state.inventory[i]=1;state.runs++;selected=i;hint('Новая кирка куплена. Объедини её с другой киркой уровня 1!');save();refresh();};$('upgrade').onclick=()=>{let cost=upCost();if(state.coins<cost||finished)return;state.coins-=cost;state.power++;hint('Сила всех кирок увеличена!');save();refresh();};$('nextLevel').onclick=()=>{state.level++;state.best=Math.max(state.best,state.level);if(!state.inventory.some(Boolean))state.inventory[0]=2;save();makeLevel();};$('reset').onclick=()=>{if(confirm('Точно удалить весь прогресс Deepforge?')){localStorage.removeItem(STORAGE);state=initial();makeLevel();}};
-let touchStart=null;const inv=$('inventory');inv.addEventListener('pointerdown',e=>{const slot=e.target.closest('.slot');if(slot)touchStart={id:Number(slot.dataset.index),x:e.clientX,y:e.clientY};});inv.addEventListener('pointerup',e=>{if(!touchStart)return;const el=document.elementFromPoint(e.clientX,e.clientY);const slot=el&&el.closest('.slot');if(slot&&Number(slot.dataset.index)!==touchStart.id&&Math.hypot(e.clientX-touchStart.x,e.clientY-touchStart.y)>12){merge(touchStart.id,Number(slot.dataset.index));}touchStart=null;});
-state=load();makeLevel();function loop(time){let dt=Math.min(2.3,(time-last)/16.666||1);last=time;tick(dt);draw();requestAnimationFrame(loop);}requestAnimationFrame(loop);
-})();
+import {
+  BALANCE,
+  STORAGE,
+  LEGACY_STORAGE,
+  LEVELS,
+  TOOLS,
+  createState,
+  loadState,
+  restoreState,
+  openBoard,
+  buyCost,
+  upgradeCost,
+  forgeCost,
+  forgeTier,
+  forgeTool,
+  buyTool,
+  upgrade,
+  merge,
+  rescue,
+  canRescue,
+  launch,
+  hitBlock,
+  nextLevel,
+  CAMPAIGN_LENGTH,
+  TROPHIES,
+  getBoosts,
+  shopTier,
+  toolStats,
+  bossActive,
+  bossVulnerable,
+  hitBoss,
+} from "./src/core.js";
+import { MinePhysics, blockRect, FIELD } from "./src/physics.js";
+import { MineRenderer } from "./src/renderer.js";
+import { toolMarkup, trophyMarkup } from "./src/art.js";
+import { GameAudio } from "./src/audio.js";
+import { YandexPlatform } from "./src/platform.js";
+
+const $ = (id) => document.getElementById(id);
+const canvas = $("game"),
+  renderer = new MineRenderer(canvas),
+  pauses = new Set();
+let storage;
+try {
+  storage = window.localStorage;
+} catch {
+  storage = {
+    getItem: () => null,
+    setItem: () => {
+      throw new Error("Storage unavailable");
+    },
+    removeItem: () => {},
+  };
+}
+let state = loadState(storage),
+  blocks = [],
+  physics,
+  selected = -1,
+  pointerX = null,
+  cloudTimer,
+  lastTime = 0,
+  accumulator = 0,
+  booting = true;
+const audio = new GameAudio(state.muted, state.musicMuted);
+const platform = new YandexPlatform({
+  onPause: (reason) => pause(reason, true),
+  onResume: (reason) => pause(reason, false),
+  onStatus: (text) => {
+    $("saveStatus").textContent = text;
+  },
+});
+const number = (n) => n.toLocaleString("ru-RU");
+const isPaused = () => booting || pauses.size > 0;
+function hint(message) {
+  $("hint").textContent = message;
+}
+function pause(reason, enabled) {
+  if (enabled) pauses.add(reason);
+  else pauses.delete(reason);
+  audio.setPaused(isPaused());
+  platform.setPlaying(!isPaused() && !state.levelComplete);
+  $("pauseShade").classList.toggle("hidden", !pauses.has("manual"));
+  refresh();
+}
+function persist() {
+  state.updatedAt = Date.now();
+  try {
+    storage.setItem(STORAGE, JSON.stringify(state));
+  } catch {
+    $("saveStatus").textContent = "Сохранение на устройстве недоступно";
+  }
+  clearTimeout(cloudTimer);
+  cloudTimer = setTimeout(() => platform.save(state), 2500);
+}
+function refresh() {
+  const active = physics?.tools.length || 0,
+    locked = isPaused() || state.levelComplete;
+  $("coins").textContent = number(state.coins);
+  $("gems").textContent = number(state.gems);
+  $("level").textContent = String(state.level).padStart(2, "0");
+  $("best").textContent = String(state.best).padStart(2, "0");
+  $("capacity").textContent =
+    `${state.inventory.filter(Boolean).length} / ${BALANCE.capacity}`;
+  $("buyCost").textContent = buyCost(state);
+  $("shopTier").textContent = shopTier(state);
+  $("upgradeCost").textContent =
+    state.power >= BALANCE.maxPower ? "МАКС." : number(upgradeCost(state));
+  $("damage").textContent = state.power + 2;
+  $("buy").disabled =
+    locked || state.coins < buyCost(state) || !state.inventory.includes(null);
+  $("forge").disabled =
+    locked || state.gems < forgeCost(state) || !state.inventory.includes(null);
+  $("forgeCost").textContent = forgeCost(state);
+  $("forgeTier").textContent = forgeTier(state);
+  $("upgrade").disabled =
+    locked ||
+    state.coins < upgradeCost(state) ||
+    state.power >= BALANCE.maxPower;
+  $("rescue").classList.toggle("hidden", !canRescue(state, active));
+  $("rescue").disabled = locked;
+  $("dropSelected").classList.toggle("hidden", selected < 0 || locked);
+  $("dropSelected").disabled = active >= BALANCE.maxActive;
+  $("rewardAd").classList.toggle("hidden", !platform.canReward);
+  $("rewardAd").disabled = locked || platform.adActive;
+  $("activeTools").textContent = `${active} / ${BALANCE.maxActive}`;
+  canvas.dataset.active = active;
+  const destroyed = blocks.filter((b) => !b.alive).length;
+  $("remaining").textContent = `${destroyed} / ${blocks.length} блоков`;
+  canvas.dataset.destroyed = destroyed;
+  canvas.dataset.kind = LEVELS[state.level - 1].kind;
+  canvas.dataset.boss = bossActive(state)
+    ? "active"
+    : state.boss
+      ? state.boss.hp === 0
+        ? "defeated"
+        : "waiting"
+      : "none";
+  $("mineEarned").textContent = number(state.board?.earned || 0);
+  $("mineSpent").textContent = number(state.board?.spent || 0);
+  const toCheckpoint =
+    Math.min(70, ((state.board?.checkpoints || 0) + 1) * 10) - destroyed;
+  $("nextMilestone").textContent =
+    destroyed === 70
+      ? bossActive(state)
+        ? "Путь свободен. Добейся победы над хранителем!"
+        : "Все находки собраны."
+      : `Ещё ${toCheckpoint} блоков — премия ${Math.round(6 * LEVELS[state.level - 1].incomeScale)} монет.`;
+  $("bossStatus").classList.toggle("hidden", !state.boss);
+  if (state.boss) {
+    $("bossName").textContent = LEVELS[state.level - 1].trophy.boss;
+    $("bossHp").textContent =
+      `${number(state.boss.hp)} / ${number(state.boss.maxHp)}`;
+    $("bossFill").style.width = `${(state.boss.hp / state.boss.maxHp) * 100}%`;
+    $("bossStatus").classList.toggle(
+      "vulnerable",
+      bossActive(state) && bossVulnerable(state),
+    );
+    $("bossHint").textContent =
+      state.boss.hp === 0
+        ? "Хранитель побеждён. Трофей сохранён."
+        : !bossActive(state)
+          ? "Очисти породу, чтобы разбудить хранителя."
+          : bossVulnerable(state)
+            ? "Слабое место открыто! Следующий удар ×1,65."
+            : `Броня поглощает часть урона. До слабого места: ${3 - (state.boss.hits % 4)} удара.`;
+  }
+  $("progressFill").style.width =
+    `${blocks.length ? (destroyed / blocks.length) * 100 : 0}%`;
+  for (const [i, slot] of [...$("inventory").children].entries()) {
+    const tier = state.inventory[i];
+    if (slot.dataset.tier !== String(tier)) {
+      slot.innerHTML = tier
+        ? `${toolMarkup(tier)}<small>УР. ${tier}</small>`
+        : "";
+      slot.dataset.tier = String(tier);
+    }
+    slot.classList.toggle("empty", !tier);
+    slot.classList.toggle("selected", selected === i);
+    slot.classList.toggle(
+      "merge-target",
+      !!tier &&
+        selected >= 0 &&
+        selected !== i &&
+        tier === state.inventory[selected] &&
+        tier < BALANCE.maxTier,
+    );
+    slot.setAttribute(
+      "aria-label",
+      tier
+        ? `${TOOLS[tier - 1].name}, уровень ${tier}, ячейка ${i + 1}`
+        : `Пустая ячейка ${i + 1}`,
+    );
+    slot.setAttribute("aria-pressed", String(selected === i));
+    slot.setAttribute("aria-disabled", String(locked));
+    slot.title = tier
+      ? `${TOOLS[tier - 1].name} · урон ${toolStats(state, tier).damage} · ${toolStats(state, tier).hits} ударов`
+      : "Пустая ячейка";
+  }
+  const tier = state.inventory[selected];
+  $("selectedIcon").innerHTML = toolMarkup(tier || 1);
+  $("selectedIcon").style.opacity = tier ? "1" : ".35";
+  $("selectedName").textContent = tier
+    ? TOOLS[tier - 1].name
+    : "Выбери инструмент";
+  $("selectedInfo").textContent = tier
+    ? `Уровень ${tier} · урон ${toolStats(state, tier).damage} · ${toolStats(state, tier).hits} ударов`
+    : "И брось его в шахту";
+  $("levelOverlay").classList.toggle("hidden", !state.levelComplete);
+  if (state.levelComplete) {
+    $("winTitle").textContent =
+      state.level === CAMPAIGN_LENGTH
+        ? "Сердце горы найдено!"
+        : state.boss && state.trophies.includes(state.level)
+          ? "Хранитель побеждён!"
+          : LEVELS[state.level - 1].treasure
+            ? "Золотая жила собрана!"
+            : "Шахта зачищена!";
+    $("winText").textContent =
+      state.level === CAMPAIGN_LENGTH
+        ? `Все ${CAMPAIGN_LENGTH} шахт пройдены. Начни новый поход с накоплениями и трофеями.`
+        : state.boss
+          ? state.trophies.includes(state.level)
+            ? `Трофей «${LEVELS[state.level - 1].trophy.name}» на полке. Постоянно: ${LEVELS[state.level - 1].trophy.description}.`
+            : "Эта шахта уже завершена в предыдущей версии. Продолжай экспедицию: новые хранители и трофеи впереди."
+          : `Найдено ${number(state.board?.earned || 0)} монет, на кирки потрачено ${number(state.board?.spent || 0)}. Впереди — ${LEVELS[state.level].name.toLowerCase()}.`;
+    $("nextLevel").textContent =
+      state.level === CAMPAIGN_LENGTH
+        ? "Ещё один поход →"
+        : "В следующую шахту →";
+  }
+  const soundButton = $("sound");
+  soundButton.textContent = state.muted ? "♪̸" : "♪";
+  soundButton.setAttribute(
+    "aria-label",
+    state.muted ? "Включить звук" : "Выключить звук",
+  );
+  soundButton.setAttribute("aria-pressed", String(state.muted));
+  $("music").textContent = state.musicMuted ? "Мелодия: выкл" : "Мелодия: вкл";
+  $("music").setAttribute("aria-pressed", String(state.musicMuted));
+  $("trophyCount").textContent =
+    `${state.trophies.length} / ${TROPHIES.length}`;
+  const trophyKey = state.trophies.join(",");
+  if ($("trophyList").dataset.owned !== trophyKey) {
+    $("trophyList").dataset.owned = trophyKey;
+    $("trophyList").innerHTML = TROPHIES.filter((t) =>
+      state.trophies.includes(t.level),
+    )
+      .map(
+        (t) =>
+          `<div class="trophy-item" data-trophy="${t.level}" title="${t.name}: ${t.description}">${trophyMarkup(t)}<span>${t.name}<small>${t.description}</small></span></div>`,
+      )
+      .join("");
+  }
+  const buffs = getBoosts(state);
+  $("trophyBoosts").textContent = state.trophies.length
+    ? `Бонусы: урон +${Math.round((buffs.damage - 1) * 100)}% · золото +${Math.round((buffs.gold - 1) * 100)}% · скидка ${Math.round(buffs.discount * 100)}%${buffs.hits ? ` · +${buffs.hits} удар` : ""}.`
+    : "Первый хранитель ждёт в 15-й шахте. Его трофей останется на фоне и усилит инструменты.";
+}
+function syncBoss() {
+  if (bossActive(state)) {
+    physics.showBoss();
+    physics.boss.enraged = state.boss.hp < state.boss.maxHp * 0.35;
+  } else physics.hideBoss();
+}
+function setupLevel() {
+  physics?.destroy();
+  selected = -1;
+  renderer.particles = [];
+  blocks = openBoard(state);
+  physics = new MinePhysics(blocks, {
+    onHit: (id, power, tool) => {
+      if (state.levelComplete) return;
+      const result = hitBlock(state, blocks, id, power),
+        { x, y } = tool.body.position;
+      renderer.burst(x, y, "#e9cca0", 4);
+      for (const b of result.destroyed) {
+        physics.removeBlock(b.id);
+        const r = blockRect(b);
+        renderer.burst(
+          r.x + 27,
+          r.y + 18,
+          b.type === "gem"
+            ? "#a3e6cc"
+            : b.type === "bomb"
+              ? "#edbf73"
+              : "#c99c70",
+          b.type === "bomb" ? 25 : 12,
+        );
+      }
+      syncBoss();
+      audio.play(
+        result.completed
+          ? "win"
+          : result.gems
+            ? "gem"
+            : result.destroyed.length
+              ? "break"
+              : "hit",
+      );
+      if (result.completed) {
+        platform.setPlaying(false);
+        hint("Отличная работа! Следующая глубина ждёт.");
+      } else if (result.bossRevealed)
+        hint(
+          `Проснулся ${LEVELS[state.level - 1].trophy.boss}! Три удара по броне откроют слабое место.`,
+        );
+      else if (result.chainCoins)
+        hint(
+          `Цепная добыча: ${result.destroyed.length} блоков · +${result.chainCoins} монет за серию!`,
+        );
+      else if (result.checkpointCoins)
+        hint(
+          `Ещё десять блоков пройдены. Премия: ${result.checkpointCoins} монет.`,
+        );
+      persist();
+      refresh();
+    },
+    onBossHit: (power, tool) => {
+      const result = hitBoss(state, power);
+      renderer.burst(
+        tool.body.position.x,
+        tool.body.position.y,
+        result.vulnerable ? "#e1c68b" : "#9aad9a",
+        result.vulnerable ? 20 : 7,
+      );
+      audio.play(result.completed ? "win" : result.vulnerable ? "gem" : "boss");
+      syncBoss();
+      if (result.completed) {
+        platform.setPlaying(false);
+        hint(
+          result.trophy
+            ? `Трофей «${result.trophy.name}»: ${result.trophy.description}!`
+            : "Хранитель побеждён. Бонус трофея уже действует.",
+        );
+      }
+      persist();
+      refresh();
+    },
+    onRetire: () => {
+      refresh();
+      if (canRescue(state, physics.tools.length))
+        hint(
+          "Кирки закончились? Забери бесплатную в мастерской — и продолжай!",
+        );
+    },
+  });
+  const level = LEVELS[state.level - 1];
+  syncBoss();
+  document.documentElement.style.setProperty("--theme", level.color);
+  $("mineName").textContent = level.name;
+  $("mineKind").textContent = level.label;
+  document.querySelector(".mine-panel").dataset.kind = level.kind;
+  $("biome").textContent = level.biome;
+  $("depth").textContent = `${state.level * 100} м под землёй`;
+  const chapterStart = Math.floor((state.level - 1) / 15) * 15 + 1;
+  const chapterEnd = Math.min(CAMPAIGN_LENGTH, chapterStart + 14);
+  $("journeyRange").textContent =
+    `Ближайший участок: ${chapterStart}–${chapterEnd}`;
+  $("journeyTrack").style.gridTemplateColumns =
+    `repeat(${chapterEnd - chapterStart + 1},1fr)`;
+  $("journeyTrack").innerHTML = LEVELS.filter(
+    (l) => l.id >= chapterStart && l.id <= chapterEnd,
+  )
+    .map(
+      (l) =>
+        `<span class="${l.id < state.level ? "done" : l.id === state.level ? "current" : ""}" title="${l.id}. ${l.name}"></span>`,
+    )
+    .join("");
+  $("mineMap").innerHTML = LEVELS.map(
+    (l) =>
+      `<div class="map-cell ${l.id === state.level ? "current" : l.id > state.best ? "locked" : ""}" data-level="${l.id}" data-kind="${l.kind}"><b>${String(l.id).padStart(2, "0")}</b><small>${l.label.toLowerCase()}${l.id === state.level ? " · ты здесь" : ""}</small></div>`,
+  ).join("");
+  $("journalTitle").textContent = level.boss
+    ? `Трофей: ${level.trophy.name}`
+    : level.treasure
+      ? level.challenge
+        ? "Золото достаётся смелым"
+        : "Время выдохнуть"
+      : level.challenge
+        ? "Порода не сдастся без боя"
+        : "Готовься к следующей глубине";
+  const nextBoss = TROPHIES.find((t) => t.level > state.level);
+  $("journalText").textContent = level.boss
+    ? `${level.trophy.boss} скрывается под породой. Три удара раскалывают броню, четвёртый бьёт в слабое место. Награда: ${level.trophy.description}.`
+    : level.treasure
+      ? `${level.challenge ? "Испытание остаётся сложным, но " : ""}Много мягких золотых жил. Пополни кошелёк перед хранителем; не трать весь запас на улучшения.`
+      : level.challenge
+        ? "Прочность породы ×2,75. Объединяй инструменты и используй бомбы. За зачистку — дополнительный кристалл."
+        : nextBoss
+          ? `Хранитель на ${nextBoss.level}-м горизонте. Перед ним будет богатая шахта, а после победы — «${nextBoss.name}»: ${nextBoss.description}.`
+          : "Все хранители позади. Впереди сердце горы — и последние открытия экспедиции.";
+  hint(
+    level.challenge
+      ? "Испытание: крепкая порода. Запасись кирками и ищи цепочки бомб."
+      : level.treasure
+        ? "Золотая передышка. Собери запас перед встречей с хранителем."
+        : "Выбери кирку в мастерской и нажми на точку сброса в шахте.",
+  );
+  platform.setPlaying(!isPaused() && !state.levelComplete);
+  refresh();
+  persist();
+}
+function choose(index) {
+  if (isPaused() || state.levelComplete) return;
+  audio.unlock();
+  if (
+    selected >= 0 &&
+    selected !== index &&
+    state.inventory[selected] === state.inventory[index] &&
+    state.inventory[index]
+  ) {
+    doMerge(selected, index);
+    return;
+  }
+  selected = state.inventory[index] ? index : -1;
+  hint(
+    selected >= 0
+      ? "Кирка выбрана. Нажми на шахту, чтобы бросить, или выбери такую же для объединения."
+      : "Выбери инструмент или купи новую кирку.",
+  );
+  refresh();
+}
+function doMerge(from, to) {
+  if (isPaused() || !merge(state, from, to)) {
+    hint(
+      "Объединяются только разные ячейки с одинаковыми инструментами до уровня 12.",
+    );
+    return;
+  }
+  selected = to;
+  audio.unlock();
+  audio.play("merge");
+  hint(`Получен инструмент «${TOOLS[state.inventory[to] - 1].name}»!`);
+  persist();
+  refresh();
+  const slot = $("inventory").children[to];
+  slot.classList.remove("just-merged");
+  void slot.offsetWidth;
+  slot.classList.add("just-merged");
+}
+function shoot(x) {
+  if (isPaused() || state.levelComplete) return;
+  if (physics.tools.length >= BALANCE.maxActive) {
+    hint("В шахте уже пять инструментов. Подожди немного.");
+    return;
+  }
+  if (selected < 0 || !state.inventory[selected]) {
+    hint("Сначала выбери инструмент в мастерской.");
+    return;
+  }
+  audio.unlock();
+  const tier = launch(state, selected, physics.tools.length);
+  if (!tier) return;
+  physics.add(tier, x, state.power, toolStats(state, tier));
+  selected = -1;
+  hint("Добыча идёт! Можно бросить ещё инструменты или заняться мастерской.");
+  persist();
+  refresh();
+}
+function openDialog(id) {
+  if ($(id).open) return;
+  pause(`dialog:${id}`, true);
+  $(id).showModal();
+}
+function closeTutorial() {
+  $("tutorial").close();
+}
+for (const id of ["tutorial", "mapDialog", "resetDialog"]) {
+  $(id).addEventListener("close", () => {
+    if (id === "tutorial") {
+      state.tutorialDone = true;
+      persist();
+    }
+    pause(`dialog:${id}`, false);
+  });
+}
+for (let i = 0; i < BALANCE.capacity; i++) {
+  const slot = document.createElement("button");
+  slot.type = "button";
+  slot.className = "slot";
+  slot.dataset.index = i;
+  $("inventory").append(slot);
+}
+let drag = null,
+  suppressClickUntil = 0;
+$("inventory").addEventListener("click", (event) => {
+  const slot = event.target.closest(".slot");
+  if (slot && performance.now() > suppressClickUntil)
+    choose(Number(slot.dataset.index));
+});
+$("inventory").addEventListener("pointerdown", (event) => {
+  if (isPaused() || state.levelComplete || event.button !== 0) return;
+  const slot = event.target.closest(".slot");
+  if (!slot || !state.inventory[slot.dataset.index]) return;
+  drag = {
+    from: Number(slot.dataset.index),
+    x: event.clientX,
+    y: event.clientY,
+    pointer: event.pointerId,
+  };
+  slot.setPointerCapture(event.pointerId);
+  audio.unlock();
+});
+$("inventory").addEventListener("pointerup", (event) => {
+  if (!drag || drag.pointer !== event.pointerId) return;
+  if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 12) {
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest(".slot");
+    suppressClickUntil = performance.now() + 300;
+    if (target) doMerge(drag.from, Number(target.dataset.index));
+  }
+  drag = null;
+});
+$("inventory").addEventListener("pointercancel", () => {
+  drag = null;
+});
+canvas.addEventListener("pointermove", (event) => {
+  const rect = canvas.getBoundingClientRect();
+  pointerX = ((event.clientX - rect.left) * FIELD.width) / rect.width;
+});
+canvas.addEventListener("pointerleave", () => {
+  pointerX = null;
+});
+canvas.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const rect = canvas.getBoundingClientRect();
+  shoot(((event.clientX - rect.left) * FIELD.width) / rect.width);
+});
+canvas.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    shoot(210);
+  }
+});
+$("dropSelected").onclick = () => {
+  shoot(210);
+  canvas.scrollIntoView({
+    behavior: renderer.reducedMotion ? "instant" : "smooth",
+    block: "center",
+  });
+};
+$("buy").onclick = () => {
+  if (isPaused()) return;
+  const index = buyTool(state);
+  if (index < 0) return;
+  selected = index;
+  audio.unlock();
+  audio.play("buy");
+  hint(
+    `Кирка уровня ${shopTier(state)} в мастерской. Поставки обновятся в следующей шахте.`,
+  );
+  persist();
+  refresh();
+};
+$("forge").onclick = () => {
+  if (isPaused()) return;
+  const index = forgeTool(state);
+  if (index < 0) return;
+  selected = index;
+  audio.unlock();
+  audio.play("gem");
+  hint(
+    `Кристаллы превратились в инструмент «${TOOLS[state.inventory[index] - 1].name}»!`,
+  );
+  persist();
+  refresh();
+};
+$("upgrade").onclick = () => {
+  if (isPaused() || !upgrade(state)) return;
+  audio.unlock();
+  audio.play("merge");
+  hint("Каждый следующий бросок стал сильнее!");
+  persist();
+  refresh();
+};
+$("rescue").onclick = () => {
+  if (isPaused() || !rescue(state, physics.tools.length)) return;
+  selected = 0;
+  hint("Бесплатная кирка твоя. Можно продолжать экспедицию!");
+  persist();
+  refresh();
+};
+$("nextLevel").onclick = () => {
+  if (isPaused() || !nextLevel(state)) return;
+  setupLevel();
+};
+$("sound").onclick = () => {
+  audio.unlock();
+  state.muted = !state.muted;
+  audio.setMuted(state.muted);
+  if (!state.muted) audio.play("buy");
+  persist();
+  refresh();
+};
+$("music").onclick = () => {
+  audio.unlock();
+  state.musicMuted = !state.musicMuted;
+  audio.setMusicMuted(state.musicMuted);
+  persist();
+  refresh();
+};
+$("help").onclick = () => openDialog("tutorial");
+$("tutorialStart").onclick = () => {
+  audio.unlock();
+  closeTutorial();
+};
+$("tutorialClose").onclick = closeTutorial;
+$("mapOpen").onclick = () => {
+  openDialog("mapDialog");
+  requestAnimationFrame(() =>
+    $("mineMap").querySelector(".current")?.scrollIntoView({ block: "center" }),
+  );
+};
+$("mapClose").onclick = () => $("mapDialog").close();
+$("pause").onclick = () => pause("manual", true);
+$("resume").onclick = () => pause("manual", false);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !document.querySelector("dialog[open]"))
+    pause("manual", !pauses.has("manual"));
+});
+$("rewardAd").onclick = () => {
+  if (isPaused() || state.levelComplete) return;
+  platform.reward(() => {
+    state.coins += BALANCE.rewardAd;
+    hint(`Награда за просмотр: ${BALANCE.rewardAd} монет. Спасибо!`);
+    persist();
+    refresh();
+  });
+  refresh();
+};
+$("reset").onclick = () => openDialog("resetDialog");
+$("resetCancel").onclick = () => $("resetDialog").close();
+$("resetConfirm").onclick = () => {
+  clearTimeout(cloudTimer);
+  state = createState();
+  state.tutorialDone = true;
+  audio.setMuted(false);
+  audio.setMusicMuted(false);
+  try {
+    storage.removeItem(LEGACY_STORAGE);
+  } catch {
+    /* In-memory mode remains usable. */
+  }
+  $("resetDialog").close();
+  setupLevel();
+};
+document.addEventListener("visibilitychange", () => {
+  pause("hidden", document.hidden);
+  if (document.hidden) {
+    clearTimeout(cloudTimer);
+    platform.save(state);
+  }
+});
+window.addEventListener("pagehide", () => {
+  clearTimeout(cloudTimer);
+  platform.save(state);
+});
+function frame(time) {
+  accumulator += Math.min(50, Math.max(0, time - (lastTime || time)));
+  lastTime = time;
+  if (!isPaused() && !state.levelComplete)
+    while (accumulator >= 1000 / 60) {
+      physics.step();
+      renderer.update();
+      accumulator -= 1000 / 60;
+    }
+  else accumulator = 0;
+  renderer.draw(state, blocks, physics, selected, pointerX);
+  requestAnimationFrame(frame);
+}
+async function boot() {
+  refresh();
+  await platform.init();
+  const cloud = await platform.load();
+  if (
+    [2, 3].includes(cloud?.version) &&
+    Array.isArray(cloud.inventory) &&
+    cloud.inventory.length === BALANCE.capacity &&
+    Number.isSafeInteger(cloud.updatedAt) &&
+    cloud.updatedAt > state.updatedAt
+  )
+    state = restoreState(cloud);
+  audio.setMuted(state.muted);
+  audio.setMusicMuted(state.musicMuted);
+  await renderer.ready;
+  setupLevel();
+  if (document.hidden) pause("hidden", true);
+  if (!state.tutorialDone) openDialog("tutorial");
+  renderer.draw(state, blocks, physics, selected, pointerX);
+  platform.ready();
+  booting = false;
+  pause("boot", false);
+  requestAnimationFrame(frame);
+}
+boot().catch((error) => {
+  console.error("Deepforge startup failed", error);
+  hint("Не удалось открыть шахту. Перезагрузи страницу.");
+});
