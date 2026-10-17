@@ -27,6 +27,7 @@ async function seed(page, changes = {}, key = STORAGE) {
 const slot = (page, i) => page.locator(`.slot[data-index="${i}"]`);
 async function start(page) {
   await page.goto("/");
+  await expect(page.locator(".slot")).toHaveCount(12);
   await expect(page.locator("#mineName")).toHaveText("Первый свет");
   await expect(page.locator("#buy")).toBeEnabled();
 }
@@ -104,6 +105,30 @@ test("broke players recover without ads or resetting their progress", async ({
   await expect(page.locator("#rescue")).not.toBeVisible();
   await expect(page.locator("#coins")).toHaveText("0");
   await expect(page.locator("#rewardAd")).not.toBeVisible();
+});
+
+test("auto merge makes the complete cascade for free, persists it and can launch the result", async ({ page, isMobile }) => {
+  await seed(page, { gems: 7, inventory: [1, 1, 1, 1, ...Array(8).fill(null)] });
+  await start(page);
+  await expect(page.locator("#upgradeLabel")).toHaveText("Улучшить силу (+1)");
+  await page.locator("#pause").click();
+  await expect(page.locator("#autoMerge")).toBeDisabled();
+  await page.locator("#resume").click();
+  await page.locator("#autoMerge").click();
+  await expect(page.locator('.slot[data-tier="3"]')).toHaveCount(1);
+  await expect(page.locator('.slot[data-tier="null"]')).toHaveCount(11);
+  await expect(page.locator("#mergeFeedback")).toContainText("Слияний: 3");
+  await expect(page.locator("#autoMerge")).toBeDisabled();
+  await expect(page.locator("#coins")).toHaveText("180");
+  await expect(page.locator("#gems")).toHaveText("7");
+  await expect(page.locator("#upgrade")).toHaveAttribute("title", /7 → 10 \(\+3\)/);
+  await page.reload();
+  await expect(page.locator('.slot[data-tier="3"]')).toHaveCount(1);
+  await expect(page.locator("#autoMerge")).toBeDisabled();
+  await page.locator('.slot[data-tier="3"]').click();
+  if (isMobile) await page.locator("#dropSelected").click();
+  else await page.locator("#game").click({ position: { x: 250, y: 85 } });
+  await expect(page.locator("#game")).not.toHaveAttribute("data-destroyed", "0");
 });
 test("crystals forge a stronger tool without spending coins", async ({
   page,
@@ -237,6 +262,9 @@ test("the visible restart refunds this attempt, removes flying tools and keeps t
     else await page.locator("#game").click({ position: { x: 150, y: 65 } });
   });
   await expect(page.locator("#game")).toHaveAttribute("data-active", "1");
+  // Keep mining paused when the dialog is cancelled; a running tool can
+  // legitimately earn more coins before the wallet assertion executes.
+  await page.locator("#pause").click();
   await page.locator("#reset").click();
   const coins = await page.locator("#coins").textContent();
   await page.locator("#resetCancel").click();
@@ -618,7 +646,7 @@ async function mistChanges(page) {
   });
 }
 
-test("lamp mist moves gently, freezes on pause and respects reduced motion", async ({ page }) => {
+test("camp fog and fire move gently, freeze on pause and respect reduced motion", async ({ page }) => {
   await seed(page);
   await start(page);
   expect(await mistChanges(page)).toBeGreaterThan(0);

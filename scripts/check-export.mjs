@@ -55,11 +55,15 @@ async function play(page, mobile) {
     await page.locator(".slot").nth(1).getAttribute("data-tier"),
     "2",
   );
+  await page.locator("#autoMerge").click();
+  assert.equal(await page.locator('.slot[data-tier="3"]').count(), 1);
+  assert.equal(await page.locator("#autoMerge").isDisabled(), true);
   await page.locator("#buy").click();
   assert.equal(await page.locator("#coins").textContent(), "155");
   assert.equal(await page.locator("#upgrade").isDisabled(), true);
   assert.equal(await page.locator("#damage").textContent(), "2");
-  await page.locator(".slot").nth(1).click();
+  assert.equal(await page.locator("#upgradeLabel").textContent(), "Улучшить силу (+1)");
+  await page.locator('.slot[data-tier="3"]').click();
   if (mobile) await page.locator("#dropSelected").click();
   else await page.locator("#game").click({ position: { x: 250, y: 85 } });
   await page.waitForFunction(

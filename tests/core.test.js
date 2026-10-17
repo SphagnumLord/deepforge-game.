@@ -13,6 +13,8 @@ import {
   forgeTier,
   upgrade,
   merge,
+  mergeAll,
+  findMergePair,
   rescue,
   canRescue,
   launch,
@@ -57,6 +59,27 @@ test("merge validates indices, matching tiers and maximum tier without consuming
   s.inventory[0] = s.inventory[1] = 12;
   assert.equal(merge(s, 0, 1), false);
 });
+test("automatic merging cascades through a full mixed inventory, conserves tools and stops at the maximum", () => {
+  const s = createState();
+  s.inventory = [1, 1, 1, 1, 1, 1, 1, 1, 11, 11, 12, 12];
+  openBoard(s);
+  const entry = structuredClone(s.entry), before = structuredClone(s);
+  const value = (inventory) => inventory.reduce((total, tier) => total + (tier ? 2 ** (tier - 1) : 0), 0);
+  const merged = mergeAll(s);
+  assert.equal(merged.length, 8);
+  assert.deepEqual(s.inventory.filter(Boolean).sort((a, b) => a - b), [4, 12, 12, 12]);
+  assert.equal(value(s.inventory), value(before.inventory));
+  assert.equal(findMergePair(s), null);
+  assert.deepEqual(mergeAll(s), []);
+  for (const key of ["coins", "gems", "power", "runs", "board", "entry"])
+    assert.deepEqual(s[key], before[key], `merging must not change ${key}`);
+  assert.deepEqual(s.entry, entry);
+  const completed = { ...createState(), levelComplete: true };
+  const inventory = [...completed.inventory];
+  assert.deepEqual(mergeAll(completed), []);
+  assert.deepEqual(completed.inventory, inventory);
+});
+
 test("purchases and upgrades debit exact cost; full inventory and low funds are safe", () => {
   const s = createState(),
     cost = buyCost(s),

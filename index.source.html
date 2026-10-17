@@ -19,7 +19,7 @@
     <div class="shell">
       <header class="header">
         <a class="brand" href="./" aria-label="Deepforge — главная"
-          ><img src="/assets/mark.svg" width="42" height="42" alt="" /><span
+          ><img src="/assets/mark.svg" width="42" height="42" alt="Алмазная кирка Deepforge" /><span
             >DEEPFORGE<small>ШАХТЁРСКАЯ ЭКСПЕДИЦИЯ</small></span
           ></a
         >
@@ -101,7 +101,7 @@
             <div class="mine-controls">
               <span>Новая попытка на этой глубине</span>
               <button class="restart-button" id="reset" type="button">
-                <span aria-hidden="true">↻</span> Заново шахту
+                <span aria-hidden="true">↻</span> Начать заново
               </button>
             </div>
             <div id="bossStatus" class="boss-status hidden" aria-live="polite">
@@ -193,6 +193,9 @@
                 id="inventory"
                 aria-label="Инвентарь"
               ></div>
+              <button id="autoMerge" class="button auto-merge" type="button">
+                <span><span aria-hidden="true">⇄</span> Объединить всё</span><span aria-hidden="true">✦</span>
+              </button>
               <p id="mergeFeedback" class="merge-feedback" role="status">
                 Перетащи кирку на такую же — получишь уровень выше.
               </p>
@@ -230,7 +233,7 @@
                   <b class="power-level">+<span id="damage">2</span></b>
                 </div>
                 <button id="upgrade" class="button secondary">
-                  <span>Улучшить силу</span
+                  <span id="upgradeLabel">Улучшить силу (+1)</span
                   ><span class="price"
                     ><span class="tiny-diamond">◇</span>
                     <b id="upgradeCost">3</b></span
@@ -241,13 +244,28 @@
                 ▷ Смотреть рекламу · +80 монет
               </button>
             </section>
-            <section class="journal panel">
+            <section class="journal journal-book" aria-label="Дневник экспедиции">
+              <div class="book-spread">
+              <div class="journal-leaf journal-left">
               <div class="journal-heading">
                 <span>✧</span>
-                <p class="eyebrow">ДНЕВНИК ЭКСПЕДИЦИИ</p>
-                <span class="journal-line"></span>
+                <p class="eyebrow">ДНЕВНИК<br />ЭКСПЕДИЦИИ</p>
               </div>
               <h3 id="journalTitle">Каждая глубина — новая история</h3>
+              <div class="journal-sketch" aria-hidden="true">
+                <svg viewBox="0 0 100 98" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="50" cy="45" r="29" stroke-width=".7"/>
+                  <circle cx="50" cy="45" r="24" stroke-width=".5" stroke-dasharray="1 4"/>
+                  <path d="m50 10 7 28 26 7-26 7-7 28-7-28-26-7 26-7Z" stroke-width="1"/>
+                  <path d="m50 18 4 23-4 4-4-4Zm0 54-4-23 4-4 4 4Z" fill="currentColor" opacity=".45" stroke="none"/>
+                  <path d="M12 85q17-10 29 0t23-2 24 2M23 89l5 2m43-2 7 1" stroke-width=".6"/>
+                  <text x="50" y="7" text-anchor="middle" fill="currentColor" stroke="none" font-size="6" font-family="Georgia">N</text>
+                </svg>
+              </div>
+              <p id="journalPage" class="journal-page-number">ЗАПИСЬ 001</p>
+              </div>
+              <div class="journal-leaf journal-right">
+              <p class="book-entry-label">ЗАМЕТКИ НА ПОЛЯХ</p>
               <p id="journalText">
                 Впереди 130 шахт: от тёплых медных жил до лунных кристаллов.
               </p>
@@ -260,6 +278,9 @@
               <div class="journal-footer">
                 <span>Лучшая шахта</span><b><span id="best">01</span> / 130</b>
               </div>
+              </div>
+              </div>
+              <span class="book-ribbon" aria-hidden="true"></span>
             </section>
             <section class="trophy-panel panel">
               <div class="trophy-heading">

@@ -2,6 +2,7 @@ import { LEVELS, MATERIALS, TROPHIES, bossActive } from "./core.js";
 import { FIELD, blockRect } from "./physics.js";
 import { drawTool, loadToolArt, drawTrophy, drawBoss } from "./art.js";
 import { createRockTextures, createLampMist } from "./geology.js";
+import { createCampScene, createCampMistMask, drawCampfire } from "./camp.js";
 
 export class MineRenderer {
   constructor(canvas) {
@@ -13,13 +14,25 @@ export class MineRenderer {
     this.ready = loadToolArt();
     this.rocks = createRockTextures();
     this.mist = createLampMist();
-    const dpr = Math.min(globalThis.devicePixelRatio || 1, 2);
-    canvas.width = FIELD.width * dpr;
-    canvas.height = FIELD.height * dpr;
-    this.ctx.scale(dpr, dpr);
+    this.camp = createCampScene();
+    this.mistMask = createCampMistMask();
+    this.mistLayer = document.createElement("canvas");
+    this.mistLayer.width = FIELD.width;
+    this.mistLayer.height = 112;
+    this.resize(canvas.getBoundingClientRect().width);
+    this.resizeObserver = new ResizeObserver(([entry]) => this.resize(entry.contentRect.width));
+    this.resizeObserver.observe(canvas);
     this.reducedMotion = globalThis.matchMedia?.(
       "(prefers-reduced-motion: reduce)",
     ).matches;
+  }
+  resize(width) {
+    const density = Math.min(3, Math.max(1, width / FIELD.width) * (globalThis.devicePixelRatio || 1));
+    const pixels = Math.round(FIELD.width * density);
+    if (this.canvas.width === pixels && this.canvas.height === Math.round(FIELD.height * density)) return;
+    this.canvas.width = pixels;
+    this.canvas.height = Math.round(FIELD.height * density);
+    this.ctx.setTransform(pixels / FIELD.width, 0, 0, this.canvas.height / FIELD.height, 0, 0);
   }
   burst(x, y, color, count = 12) {
     if (this.reducedMotion) count = Math.min(count, 4);
@@ -52,21 +65,17 @@ export class MineRenderer {
   blast(x, y) {
     if (!this.reducedMotion) this.waves.push({ x, y, life: 24 });
   }
-  drawMist(c) {
+  drawMist(target) {
+    const c = this.mistLayer.getContext("2d");
+    c.clearRect(0, 0, FIELD.width, 112);
     const seconds = this.reducedMotion ? 0 : this.time / 60;
     c.save();
-    // Reserve both shelves even before the first boss. Fog never paints over
-    // the future trophy silhouettes or the player's aiming instructions.
-    c.beginPath();
-    c.rect(0, 0, FIELD.width, 112);
-    c.roundRect(21, 36, 164, 43, 8);
-    c.roundRect(225, 36, 123, 43, 8);
-    c.clip("evenodd");
+    // A feathered mask keeps trophy silhouettes clear without rectangular gaps.
     c.globalCompositeOperation = "screen";
     for (let n = 0; n < 6; n++) {
       const phase = seconds * (0.25 + n * 0.017) + n * 1.9;
       const x = 210 + Math.sin(phase) * (17 + n * 2);
-      const y = 17 + n * 6 + Math.cos(phase * 0.8) * 7;
+      const y = 30 + n * 5 + Math.cos(phase * 0.8) * 7;
       c.save();
       c.translate(x, y);
       c.rotate(Math.sin(phase * 0.65) * 0.12);
@@ -74,48 +83,27 @@ export class MineRenderer {
       c.drawImage(this.mist[n % 3], -104, -25, 208, 50 + n * 3);
       c.restore();
     }
-    // A slender rising curl catches the warm light beneath the lamp.
+    // A slender rising curl catches the warm light above the fire.
     c.globalAlpha = 0.42;
     c.drawImage(this.mist[1], 180 + Math.sin(seconds * 0.36) * 9,
       35 + Math.cos(seconds * 0.22) * 7, 68, 58);
     c.restore();
+    c.save();
+    c.globalCompositeOperation = "destination-in";
+    c.drawImage(this.mistMask, 0, 0);
+    c.restore();
+    target.save();
+    target.globalCompositeOperation = "screen";
+    target.drawImage(this.mistLayer, 0, 0);
+    target.restore();
   }
   draw(state, blocks, physics, selected, pointerX) {
     const c = this.ctx,
       { width: w, height: h } = FIELD,
       theme = LEVELS[state.level - 1];
-    const bg = c.createLinearGradient(0, 0, 0, h);
-    bg.addColorStop(0, "#1e3336");
-    bg.addColorStop(0.45, "#17282b");
-    bg.addColorStop(1, "#102027");
-    c.fillStyle = bg;
-    c.fillRect(0, 0, w, h);
-    // Original cave silhouette, timber supports and a warm hanging miner's lamp.
-    c.fillStyle = "#101f24";
-    c.beginPath();
-    c.moveTo(0, 0);
-    for (let x = 0; x <= w; x += 28) c.lineTo(x, 19 + ((x * 13) % 31));
-    c.lineTo(w, 0);
-    c.closePath();
-    c.fill();
-    const light = c.createRadialGradient(210, 44, 0, 210, 82, 150);
-    light.addColorStop(0, "#edc27922");
-    light.addColorStop(1, "#edc27900");
-    c.fillStyle = light;
-    c.fillRect(0, 0, w, 230);
+    c.drawImage(this.camp, 0, 0, w, h);
     this.drawMist(c);
-    c.strokeStyle = "#8b7953";
-    c.lineWidth = 1;
-    c.beginPath();
-    c.moveTo(210, 0);
-    c.lineTo(210, 34);
-    c.stroke();
-    c.fillStyle = "#cdab69";
-    c.fillRect(203, 32, 14, 3);
-    c.fillStyle = "#f2d59b";
-    c.fillRect(205, 36, 10, 10);
-    c.fillStyle = "#866d46";
-    c.fillRect(202, 47, 16, 3);
+    drawCampfire(c, this.time, this.reducedMotion);
     if (state.trophies.length) {
       c.fillStyle = "#65583e";
       c.fillRect(22, 75, 160, 3);
@@ -127,28 +115,6 @@ export class MineRenderer {
           drawTrophy(c, trophy, slots[index], 58, 0.73);
       });
     }
-    for (const x of [7, 405]) {
-      c.fillStyle = "#3e3b32";
-      c.fillRect(x, 84, 8, 450);
-      c.fillStyle = "#696044";
-      c.fillRect(x + 1, 84, 2, 450);
-      for (let y = 115; y < 535; y += 78) {
-        c.fillStyle = "#807754";
-        c.fillRect(x - 1, y, 10, 3);
-        c.fillStyle = "#293432";
-        c.fillRect(x + 2, y + 4, 3, 3);
-      }
-    }
-    c.fillStyle = "#4d4a38";
-    c.fillRect(4, 131, 412, 10);
-    c.fillStyle = "#81704c";
-    c.fillRect(4, 131, 412, 2);
-    for (let i = 0; i < 34; i++) {
-      c.fillStyle = i % 3 === 0 ? "#caad7255" : "#99b8a622";
-      const x = (i * 73 + 31) % w,
-        y = 73 + ((i * 47) % 470);
-      c.fillRect(x, y, 1.5, 1.5);
-    }
     c.fillStyle = "#a1b0a4";
     c.font = '8px "Segoe UI", sans-serif';
     c.textAlign = "center";
@@ -157,7 +123,7 @@ export class MineRenderer {
         ? "НАЖМИ, ЧТОБЫ БРОСИТЬ ИНСТРУМЕНТ"
         : "ВЫБЕРИ КИРКУ В МАСТЕРСКОЙ",
       210,
-      100,
+      113,
     );
     if (selected >= 0 && !state.levelComplete) {
       const x = pointerX ?? 210;
@@ -165,15 +131,15 @@ export class MineRenderer {
       c.strokeStyle = "#d3be7788";
       c.lineWidth = 1;
       c.beginPath();
-      c.moveTo(x, 102);
-      c.lineTo(x, 126);
+      c.moveTo(x, 118);
+      c.lineTo(x, 136);
       c.stroke();
       c.setLineDash([]);
       c.fillStyle = "#ecd196";
       c.beginPath();
-      c.moveTo(x - 4, 121);
-      c.lineTo(x, 127);
-      c.lineTo(x + 4, 121);
+      c.moveTo(x - 4, 131);
+      c.lineTo(x, 137);
+      c.lineTo(x + 4, 131);
       c.fill();
     }
     for (const b of blocks) {

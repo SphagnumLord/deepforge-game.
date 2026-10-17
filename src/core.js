@@ -430,6 +430,27 @@ export function merge(s, from, to) {
   s.inventory[from] = null;
   return true;
 }
+export function findMergePair(s) {
+  if (s.levelComplete) return null;
+  // Start with the lowest tiers so new tools participate in the same cascade.
+  for (let tier = 1; tier < BALANCE.maxTier; tier++) {
+    const from = s.inventory.indexOf(tier);
+    if (from < 0) continue;
+    const to = s.inventory.indexOf(tier, from + 1);
+    if (to >= 0) return [from, to];
+  }
+  return null;
+}
+export function mergeAll(s) {
+  const merged = [];
+  let pair;
+  while ((pair = findMergePair(s))) {
+    const [from, to] = pair, tier = s.inventory[from];
+    if (!merge(s, from, to)) break;
+    merged.push({ from, to, tier });
+  }
+  return merged;
+}
 function snapshotEntry(s) {
   // Old saves have no checkpoint. A fair replay is funded without generating
   // emergency picks or changing that save's current loot and equipment.

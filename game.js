@@ -14,6 +14,8 @@ import {
   buyTool,
   upgrade,
   merge,
+  mergeAll,
+  findMergePair,
   rescue,
   canRescue,
   launch,
@@ -118,6 +120,14 @@ function refresh() {
     locked ||
     state.gems < upgradeCost(state) ||
     state.power >= BALANCE.maxPower;
+  $("autoMerge").disabled = locked || !findMergePair(state);
+  $("upgradeLabel").textContent = state.power >= BALANCE.maxPower
+    ? "Сила на максимуме" : "Улучшить силу (+1)";
+  const previewTier = state.inventory[selected] || 1;
+  const currentDamage = toolStats(state, previewTier).damage;
+  const nextDamage = toolStats({ ...state, power: Math.min(BALANCE.maxPower, state.power + 1) }, previewTier).damage;
+  $("upgrade").title = state.power >= BALANCE.maxPower ? "Максимальная базовая сила достигнута"
+    : `Базовая сила: ${state.power + 2} → ${state.power + 3}. Урон кирки ур. ${previewTier}: ${currentDamage} → ${nextDamage} (+${nextDamage - currentDamage}).`;
   $("reset").disabled = booting || state.levelComplete || platform.adActive;
   $("rescue").classList.toggle("hidden", !canRescue(state, active));
   $("rescue").disabled = locked;
@@ -382,6 +392,7 @@ function setupLevel() {
   document.querySelector(".mine-panel").dataset.kind = level.kind;
   $("biome").textContent = level.biome;
   $("depth").textContent = `${state.level * 100} м под землёй`;
+  $("journalPage").textContent = `ЗАПИСЬ ${String(state.level).padStart(3, "0")}`;
   const chapterStart = Math.floor((state.level - 1) / 15) * 15 + 1;
   const chapterEnd = Math.min(CAMPAIGN_LENGTH, chapterStart + 14);
   $("journeyRange").textContent =
@@ -654,6 +665,31 @@ $("buy").onclick = () => {
   );
   persist();
   refresh();
+};
+$("autoMerge").onclick = () => {
+  if (isPaused() || state.levelComplete) return;
+  cancelDrag();
+  const rectangles = [...$("inventory").children].map((slot) => slot.getBoundingClientRect());
+  const merged = mergeAll(state);
+  if (!merged.length) return;
+  selected = state.inventory.indexOf(Math.max(...state.inventory.filter(Boolean)));
+  audio.unlock();
+  audio.play("merge");
+  if (!renderer.reducedMotion) {
+    merged.forEach(({ from, to, tier }) => animateMerge(tier, rectangles[from], rectangles[to]));
+  }
+  persist();
+  refresh();
+  for (const { to } of merged) {
+    if (!state.inventory[to]) continue;
+    const slot = $("inventory").children[to];
+    slot.classList.remove("just-merged");
+    void slot.offsetWidth;
+    slot.classList.add("just-merged");
+  }
+  const result = `✦ Слияний: ${merged.length} · ${TOOLS[state.inventory[selected] - 1].name}`;
+  $("mergeFeedback").textContent = result;
+  hint(result);
 };
 $("forge").onclick = () => {
   if (isPaused()) return;

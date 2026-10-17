@@ -1,18 +1,8 @@
-// Original 16-bar lantern theme: a warm minor-key music-box motif, soft
-// plucked answers, walking bass and a brushed pulse. No recordings are loaded.
+// Four original 16-bar scenes form a three-minute evening score. The recurring
+// theme changes instrumentation, harmony, answers and rhythm between scenes.
 const hz = (midi) => midi ? 440 * 2 ** ((midi - 69) / 12) : 0;
 const beat = 60 / 84;
-const chords = [
-  [50, 57, 60, 65], [46, 53, 57, 62], [53, 60, 64, 67], [48, 55, 57, 64],
-  [43, 50, 57, 62], [50, 57, 60, 65], [52, 58, 62, 67], [45, 52, 55, 61],
-  [50, 57, 60, 65], [46, 53, 57, 62], [53, 60, 64, 69], [48, 55, 59, 64],
-  [43, 50, 57, 62], [46, 53, 57, 62], [45, 52, 55, 61], [50, 57, 60, 65],
-];
-export const AMBIENT_SCORE = Object.freeze({
-  bpm: 84,
-  chordSeconds: beat * 4,
-  chords: chords.map((chord) => chord.map(hz)),
-  melody: [
+const theme = [
     69, 0, 72, 74, 0, 72, 69, 67, 65, 0, 69, 72, 0, 69, 67, 0,
     67, 0, 71, 72, 74, 0, 72, 67, 64, 0, 67, 69, 0, 67, 64, 0,
     69, 0, 72, 74, 77, 0, 74, 72, 69, 0, 65, 69, 72, 0, 69, 0,
@@ -21,7 +11,54 @@ export const AMBIENT_SCORE = Object.freeze({
     72, 0, 76, 79, 0, 76, 72, 69, 67, 0, 71, 74, 0, 72, 67, 0,
     70, 0, 69, 67, 74, 0, 72, 70, 69, 0, 65, 62, 0, 65, 69, 0,
     73, 0, 76, 79, 0, 76, 73, 69, 74, 0, 72, 69, 65, 0, 62, 0,
-  ].map(hz),
+  ];
+const embers = [
+  65, 0, 69, 72, 0, 69, 67, 65, 64, 0, 67, 72, 0, 76, 72, 67,
+  62, 0, 65, 69, 72, 0, 69, 65, 62, 0, 65, 70, 0, 69, 65, 0,
+  67, 0, 70, 74, 0, 72, 70, 67, 64, 0, 67, 72, 76, 0, 74, 72,
+  69, 0, 72, 77, 0, 76, 72, 69, 64, 0, 69, 73, 76, 0, 73, 0,
+];
+const wandering = [
+  67, 0, 0, 0, 70, 0, 74, 0, 67, 0, 0, 0, 65, 0, 62, 0,
+  65, 0, 69, 0, 0, 0, 72, 0, 70, 0, 0, 0, 69, 0, 65, 0,
+  67, 0, 0, 0, 74, 0, 77, 0, 75, 0, 0, 0, 74, 0, 70, 0,
+  69, 0, 0, 0, 67, 0, 64, 0, 69, 0, 73, 0, 0, 0, 76, 0,
+];
+const lanternChords = [
+  [50, 57, 60, 65], [46, 53, 57, 62], [53, 60, 64, 67], [48, 55, 57, 64],
+  [43, 50, 57, 62], [50, 57, 60, 65], [52, 58, 62, 67], [45, 52, 55, 61],
+  [50, 57, 60, 65], [46, 53, 57, 62], [53, 60, 64, 69], [48, 55, 59, 64],
+  [43, 50, 57, 62], [46, 53, 57, 62], [45, 52, 55, 61], [50, 57, 60, 65],
+];
+const sections = [
+  { name: "evening", voice: "bells", melody: theme, chords: lanternChords },
+  { name: "embers", voice: "plucked", melody: [...embers, ...embers.map((n, i) => n && i % 16 === 2 ? n + 12 : n)], chords: [
+    [53, 60, 64, 69], [48, 55, 62, 64], [50, 57, 60, 65], [46, 53, 57, 62],
+    [43, 50, 57, 62], [48, 55, 60, 64], [53, 60, 64, 69], [45, 52, 55, 61],
+    [53, 60, 64, 67], [46, 53, 57, 62], [50, 57, 60, 65], [48, 55, 59, 64],
+    [43, 50, 57, 62], [48, 55, 60, 64], [46, 53, 57, 62], [45, 52, 55, 61],
+  ] },
+  { name: "wandering", voice: "flute", melody: [...wandering, ...wandering.map((n, i) => n && i % 16 === 6 ? n - 12 : n)], chords: [
+    [43, 50, 53, 57], [51, 58, 62, 67], [46, 53, 57, 62], [53, 60, 64, 67],
+    [48, 55, 58, 62], [43, 50, 57, 62], [52, 58, 62, 67], [45, 52, 55, 61],
+    [43, 50, 53, 57], [46, 53, 57, 62], [53, 60, 64, 69], [48, 55, 59, 64],
+    [50, 57, 60, 65], [46, 53, 57, 62], [45, 52, 55, 61], [50, 57, 60, 65],
+  ] },
+  { name: "home", voice: "celesta", melody: [
+    ...theme.slice(0, 32), ...embers.slice(0, 32),
+    ...theme.slice(64, 96).map((n, i) => n && i % 8 === 0 ? n - 12 : n), ...theme.slice(96),
+  ], chords: [
+    ...lanternChords.slice(0, 8), [53, 60, 64, 69], [46, 53, 57, 62],
+    [50, 57, 60, 65], [48, 55, 59, 64], [43, 50, 57, 62],
+    [46, 53, 57, 62], [45, 52, 55, 61], [50, 57, 60, 64],
+  ] },
+];
+export const AMBIENT_SCORE = Object.freeze({
+  bpm: 84,
+  chordSeconds: beat * 4,
+  sections: sections.map(({ name, voice }) => ({ name, voice })),
+  chords: sections.flatMap((section) => section.chords.map((chord) => chord.map(hz))),
+  melody: sections.flatMap((section) => section.melody.map(hz)),
   noteSeconds: beat / 2,
 });
 export class GameAudio {
@@ -132,6 +169,7 @@ export class GameAudio {
     type = "sine",
     attack = 0.025,
     detune = 0,
+    pan = 0,
   ) {
     const c = this.context,
       osc = c.createOscillator(),
@@ -143,7 +181,11 @@ export class GameAudio {
     gain.gain.exponentialRampToValueAtTime(volume, start + attack);
     gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
     osc.connect(gain);
-    gain.connect(bus);
+    const panner = pan ? c.createStereoPanner() : null;
+    if (panner) {
+      panner.pan.value = pan;
+      gain.connect(panner); panner.connect(bus);
+    } else gain.connect(bus);
     osc.start(start);
     osc.stop(start + length + 0.02);
     this.voices.add(osc);
@@ -151,6 +193,7 @@ export class GameAudio {
       this.voices.delete(osc);
       osc.disconnect();
       gain.disconnect();
+      panner?.disconnect();
     };
   }
   noise(start, length, volume, bus, frequency = 1500, type = "bandpass") {
@@ -176,47 +219,69 @@ export class GameAudio {
       source.disconnect(); filter.disconnect(); gain.disconnect();
     };
   }
+  melodyVoice(frequency, start, voice, step) {
+    if (voice === "plucked") {
+      this.tone(frequency, start, .82, .036, this.music, "triangle", .008, 0, -.18);
+      this.tone(frequency * 2, start, .26, .006, this.music, "sine", .006, 3, .15);
+    } else if (voice === "flute") {
+      this.tone(frequency, start, 2.3, .027, this.music, "sine", .18, -2, .16);
+      this.tone(frequency * 2, start + .04, 1.3, .0025, this.music, "sine", .22, 3, -.12);
+    } else {
+      this.tone(frequency, start, 1.35, .03, this.music, "sine", .012, 0, -.12);
+      this.tone(frequency, start, .3, .005, this.music, "triangle", .008);
+      this.tone(frequency * 2, start, voice === "celesta" ? .95 : .55,
+        voice === "celesta" ? .006 : .003, this.music, "sine", .008, 0, .22);
+    }
+    if (step % 4 === 0 && voice !== "flute")
+      this.tone(frequency, start + beat * .75, .85, .005, this.music, "sine", .018, 0, .3);
+  }
   schedule() {
     if (!this.context || this.context.state !== "running" || this.musicMuted || this.paused || this.muted) return;
-    const now = this.context.currentTime, horizon = now + 0.3;
-    if (this.nextChord < now - 0.3) this.nextChord = now + 0.08;
-    if (this.nextNote < now - 0.3) this.nextNote = now + 0.08;
-    if (this.nextBeat < now - 0.3) this.nextBeat = now + 0.08;
+    const now = this.context.currentTime, horizon = now + .3;
+    const bars = AMBIENT_SCORE.chords.length;
+    if (this.nextChord < now - .3) this.nextChord = now + .08;
+    if (this.nextNote < now - .3) this.nextNote = now + .08;
+    if (this.nextBeat < now - .3) this.nextBeat = now + .08;
     while (this.nextChord < horizon) {
-      const chord = AMBIENT_SCORE.chords[this.chord++ % AMBIENT_SCORE.chords.length];
+      const bar = this.chord++ % bars, section = Math.floor(bar / 16);
+      const chord = AMBIENT_SCORE.chords[bar];
       for (const frequency of chord)
-        this.tone(frequency, this.nextChord, 4.1, 0.011, this.music, "sine", 0.7);
+        this.tone(frequency, this.nextChord, 4.1, section === 2 ? .009 : .011,
+          this.music, "sine", section === 2 ? 1 : .7);
       this.nextChord += AMBIENT_SCORE.chordSeconds;
     }
     while (this.nextNote < horizon) {
       const step = this.note++ % AMBIENT_SCORE.melody.length;
+      const bar = Math.floor(step / 8), section = Math.floor(bar / 16);
+      const voice = AMBIENT_SCORE.sections[section].voice;
       const frequency = AMBIENT_SCORE.melody[step];
-      const start = this.nextNote + (step % 2 ? beat * 0.08 : 0);
-      if (frequency) {
-        const volume = step < 64 ? 0.029 : 0.034;
-        this.tone(frequency, start, 1.25, volume, this.music, "sine", 0.012);
-        this.tone(frequency, start, 0.32, 0.006, this.music, "triangle", 0.008);
-        this.tone(frequency * 2, start, 0.55, 0.003, this.music, "sine", 0.008);
-        // A quiet answer gives the motif a sense of space and continuity.
-        if (step % 4 === 0)
-          this.tone(frequency, start + beat * 0.75, 0.85, 0.006, this.music, "sine", 0.018);
-      } else if (step % 4 === 1) {
-        const chord = AMBIENT_SCORE.chords[Math.floor(step / 8)];
-        this.tone(chord[2] * 2, start, 0.8, 0.008, this.music, "sine", 0.02);
+      const start = this.nextNote + (step % 2 ? beat * .08 : 0);
+      if (frequency) this.melodyVoice(frequency, start, voice, step);
+      // Off-beat chord answers change register and stereo placement per scene.
+      if (!frequency && step % 4 === 1 && section !== 2) {
+        const chord = AMBIENT_SCORE.chords[bar];
+        const note = chord[section === 1 ? 1 : 2] * (section === 1 ? 1 : 2);
+        this.tone(note, start, .8, .008, this.music, section === 1 ? "triangle" : "sine", .02, 0, .25);
       }
       this.nextNote += AMBIENT_SCORE.noteSeconds;
     }
     while (this.nextBeat < horizon) {
-      const step = this.beat++ % 64;
-      const chord = AMBIENT_SCORE.chords[Math.floor(step / 4)];
-      const pulse = step % 4;
-      if (pulse !== 1) {
-        const bass = chord[pulse === 2 ? 1 : 0] / 2;
-        this.tone(bass, this.nextBeat, beat * 0.85, 0.028, this.music, "triangle", 0.018);
-        this.tone(bass * 2, this.nextBeat, 0.24, 0.005, this.music, "sine", 0.012);
+      const step = this.beat++ % (bars * 4), bar = Math.floor(step / 4);
+      const chord = AMBIENT_SCORE.chords[bar], section = Math.floor(bar / 16), pulse = step % 4;
+      const bassActive = section === 2 ? pulse % 2 === 0 : section === 1 || pulse !== 1;
+      if (bassActive) {
+        const bass = chord[pulse === 2 || (section === 1 && pulse === 1) ? 1 : 0] / 2;
+        this.tone(bass, this.nextBeat, beat * (section === 2 ? 1.7 : .85),
+          section === 2 ? .022 : .028, this.music, "triangle", .018);
+        if (section !== 2) this.tone(bass * 2, this.nextBeat, .24, .005, this.music, "sine", .012);
       }
-      if (pulse % 2) this.noise(this.nextBeat + beat * 0.04, 0.07, 0.012, this.music, 2200, "highpass");
-      else this.tone(175, this.nextBeat, 0.065, 0.008, this.music, "triangle", 0.004);
+      if (section !== 2) {
+        if (pulse % 2) this.noise(this.nextBeat + beat * .04, .07,
+          section === 1 ? .013 : .009, this.music, 2200, "highpass");
+        else this.tone(175, this.nextBeat, .065, .008, this.music, "triangle", .004);
+        if (bar % 8 === 7 && pulse === 3)
+          this.tone(340, this.nextBeat + beat * .55, .08, .005, this.music, "triangle", .005, 0, -.2);
+      }
       this.nextBeat += beat;
     }
   }
