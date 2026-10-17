@@ -1,10 +1,8 @@
 import {
   BALANCE,
   STORAGE,
-  LEGACY_STORAGE,
   LEVELS,
   TOOLS,
-  createState,
   loadState,
   restoreState,
   openBoard,
@@ -32,6 +30,7 @@ import {
   recommendedTier,
   isHardMine,
   restartAttempt,
+  restartMine,
 } from "./src/core.js";
 import { MinePhysics, blockRect, FIELD } from "./src/physics.js";
 import { MineRenderer } from "./src/renderer.js";
@@ -119,6 +118,7 @@ function refresh() {
     locked ||
     state.gems < upgradeCost(state) ||
     state.power >= BALANCE.maxPower;
+  $("reset").disabled = booting || state.levelComplete || platform.adActive;
   $("rescue").classList.toggle("hidden", !canRescue(state, active));
   $("rescue").disabled = locked;
   $("attemptNumber").textContent = state.attemptNumber;
@@ -274,19 +274,23 @@ function syncBoss() {
   } else physics.hideBoss();
 }
 function setupLevel() {
+  cancelDrag();
   physics?.destroy();
   selected = -1;
   renderer.particles = [];
+  renderer.waves = [];
   blocks = openBoard(state);
   physics = new MinePhysics(blocks, {
     onHit: (id, power, tool) => {
       if (state.levelComplete) return;
       const result = hitBlock(state, blocks, id, power, tool.tier),
         { x, y } = tool.body.position;
+      const explosions = result.destroyed.filter((b) => b.type === "bomb");
       renderer.burst(x, y, "#e9cca0", 4);
       for (const b of result.destroyed) {
         physics.removeBlock(b.id);
         const r = blockRect(b);
+        if (b.type === "bomb") renderer.blast(r.x + 27, r.y + 18);
         renderer.burst(
           r.x + 27,
           r.y + 18,
@@ -304,7 +308,11 @@ function setupLevel() {
         hint(`Эта порода требует кирку ур. ${blocks[id].minTier}+. Объедини одинаковые инструменты.`);
         return;
       }
-      audio.play(
+      if (explosions.length) {
+        audio.play("explosion");
+        canvas.dataset.explosions = Number(canvas.dataset.explosions || 0) + explosions.length;
+      }
+      if (!explosions.length || result.completed || result.gems) audio.play(
         result.completed
           ? "win"
           : result.gems
@@ -443,22 +451,28 @@ function choose(index) {
   refresh();
 }
 function doMerge(from, to) {
+  const tier = state.inventory[from];
+  const source = $("inventory").children[from]?.getBoundingClientRect();
+  const target = $("inventory").children[to]?.getBoundingClientRect();
   if (isPaused() || !merge(state, from, to)) {
     hint(
       "Объединяются только разные ячейки с одинаковыми инструментами до уровня 12.",
     );
-    return;
+    return false;
   }
+  if (!drag?.moved && !renderer.reducedMotion) animateMerge(tier, source, target);
   selected = to;
   audio.unlock();
   audio.play("merge");
   hint(`Получен инструмент «${TOOLS[state.inventory[to] - 1].name}»!`);
+  $("mergeFeedback").textContent = `✦ Уровень ${state.inventory[to]} · ${TOOLS[state.inventory[to] - 1].name}`;
   persist();
   refresh();
   const slot = $("inventory").children[to];
   slot.classList.remove("just-merged");
   void slot.offsetWidth;
   slot.classList.add("just-merged");
+  return true;
 }
 function shoot(x) {
   if (isPaused() || state.levelComplete) return;
@@ -481,6 +495,7 @@ function shoot(x) {
 }
 function openDialog(id) {
   if ($(id).open) return;
+  cancelDrag();
   pause(`dialog:${id}`, true);
   $(id).showModal();
 }
@@ -505,6 +520,44 @@ for (let i = 0; i < BALANCE.capacity; i++) {
 }
 let drag = null,
   suppressClickUntil = 0;
+function flyingTool(tier) {
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.innerHTML = `${toolMarkup(tier)}<small>УР. ${tier}</small>`;
+  document.body.append(ghost);
+  return ghost;
+}
+function animateMerge(tier, source, target) {
+  if (!source || !target) return;
+  const ghost = flyingTool(tier);
+  ghost.classList.add("merge-flight");
+  const position = (rect) => `translate3d(${rect.x + rect.width / 2 - 34}px, ${rect.y + rect.height / 2 - 42}px, 0)`;
+  const animation = ghost.animate([
+    { transform: position(source), opacity: 1 },
+    { transform: `${position(target)} scale(.6)`, opacity: 0.15 },
+  ], { duration: 240, easing: "cubic-bezier(.4,0,.2,1)" });
+  animation.finished.then(() => ghost.remove(), () => ghost.remove());
+}
+function cancelDrag(fade = false) {
+  if (!drag) return;
+  const previous = drag;
+  drag = null;
+  const source = $("inventory").children[previous.from];
+  source.classList.remove("drag-source");
+  if (source.hasPointerCapture(previous.pointer)) source.releasePointerCapture(previous.pointer);
+  $("inventory").querySelectorAll(".drop-ready, .drop-invalid").forEach((slot) => {
+    slot.classList.remove("drop-ready", "drop-invalid");
+  });
+  document.body.classList.remove("dragging-tools");
+  if (previous.ghost) {
+    if (fade && !renderer.reducedMotion) {
+      previous.ghost.classList.add("settling");
+      const animation = previous.ghost.animate([{ opacity: 1 }, { opacity: 0, scale: ".65" }], { duration: 160 });
+      animation.finished.then(() => previous.ghost.remove(), () => previous.ghost.remove());
+    } else previous.ghost.remove();
+  }
+}
 $("inventory").addEventListener("click", (event) => {
   const slot = event.target.closest(".slot");
   if (slot && performance.now() > suppressClickUntil)
@@ -519,24 +572,51 @@ $("inventory").addEventListener("pointerdown", (event) => {
     x: event.clientX,
     y: event.clientY,
     pointer: event.pointerId,
+    moved: false,
+    ghost: null,
   };
   slot.setPointerCapture(event.pointerId);
   audio.unlock();
 });
+$("inventory").addEventListener("pointermove", (event) => {
+  if (!drag || drag.pointer !== event.pointerId) return;
+  if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 8) return;
+  event.preventDefault();
+  if (!drag.moved) {
+    drag.moved = true;
+    selected = drag.from;
+    refresh();
+    drag.ghost = flyingTool(state.inventory[drag.from]);
+    $("inventory").children[drag.from].classList.add("drag-source");
+    document.body.classList.add("dragging-tools");
+  }
+  drag.ghost.style.transform = `translate3d(${event.clientX - 34}px, ${event.clientY - 47}px, 0)`;
+  $("inventory").querySelectorAll(".drop-ready, .drop-invalid").forEach((slot) => {
+    slot.classList.remove("drop-ready", "drop-invalid");
+  });
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(".slot");
+  const tier = state.inventory[drag.from];
+  const matching = target && Number(target.dataset.index) !== drag.from
+    && state.inventory[target.dataset.index] === tier && tier < BALANCE.maxTier;
+  if (target && Number(target.dataset.index) !== drag.from)
+    target.classList.add(matching ? "drop-ready" : "drop-invalid");
+  drag.ghost.classList.toggle("can-merge", !!matching);
+  drag.ghost.querySelector("small").textContent = matching ? `✦ УР. ${tier + 1}` : `УР. ${tier}`;
+});
 $("inventory").addEventListener("pointerup", (event) => {
   if (!drag || drag.pointer !== event.pointerId) return;
-  if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 12) {
+  if (drag.moved) {
     const target = document
       .elementFromPoint(event.clientX, event.clientY)
       ?.closest(".slot");
-    suppressClickUntil = performance.now() + 300;
+    suppressClickUntil = performance.now() + 400;
     if (target) doMerge(drag.from, Number(target.dataset.index));
   }
-  drag = null;
+  cancelDrag(true);
 });
-$("inventory").addEventListener("pointercancel", () => {
-  drag = null;
-});
+$("inventory").addEventListener("pointercancel", () => cancelDrag());
+$("inventory").addEventListener("lostpointercapture", () => cancelDrag());
+window.addEventListener("blur", () => cancelDrag());
 canvas.addEventListener("pointermove", (event) => {
   const rect = canvas.getBoundingClientRect();
   pointerX = ((event.clientX - rect.left) * FIELD.width) / rect.width;
@@ -638,6 +718,11 @@ $("mapClose").onclick = () => $("mapDialog").close();
 $("pause").onclick = () => pause("manual", true);
 $("resume").onclick = () => pause("manual", false);
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && drag) {
+    suppressClickUntil = performance.now() + 400;
+    cancelDrag();
+    return;
+  }
   if (event.key === "Escape" && !document.querySelector("dialog[open]"))
     pause("manual", !pauses.has("manual"));
 });
@@ -651,23 +736,21 @@ $("rewardAd").onclick = () => {
   });
   refresh();
 };
-$("reset").onclick = () => openDialog("resetDialog");
+$("reset").onclick = () => {
+  if (!booting && !state.levelComplete && !platform.adActive) openDialog("resetDialog");
+};
 $("resetCancel").onclick = () => $("resetDialog").close();
 $("resetConfirm").onclick = () => {
+  if (!restartMine(state)) return;
   clearTimeout(cloudTimer);
-  state = createState();
-  state.tutorialDone = true;
-  audio.setMuted(false);
-  audio.setMusicMuted(false);
-  try {
-    storage.removeItem(LEGACY_STORAGE);
-  } catch {
-    /* In-memory mode remains usable. */
-  }
-  $("resetDialog").close();
+  accumulator = 0;
+  pauses.delete("manual");
   setupLevel();
+  $("resetDialog").close();
+  hint("Шахта начата заново. Запасы на входе возвращены; пройденные уровни и трофеи сохранены.");
 };
 document.addEventListener("visibilitychange", () => {
+  if (document.hidden) cancelDrag();
   pause("hidden", document.hidden);
   if (document.hidden) {
     clearTimeout(cloudTimer);
@@ -686,9 +769,9 @@ function frame(time) {
     setupLevel();
     hint("Запасы закончились. Шахта начата заново: стартовое снаряжение возвращено, находки попытки потеряны.");
   }
-  if (!isPaused() && !state.levelComplete)
+  if (!isPaused())
     while (accumulator >= 1000 / 60) {
-      physics.step();
+      if (!state.levelComplete) physics.step();
       renderer.update();
       accumulator -= 1000 / 60;
     }

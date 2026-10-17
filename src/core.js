@@ -38,24 +38,39 @@ export const MATERIALS = [
 const toolNames = [
   "Походная кирка",
   "Бронзовая кирка",
-  "Стальная кирка",
-  "Кирка геолога",
-  "Шахтёрский клевец",
-  "Кованая кирка",
-  "Гранитная кирка",
-  "Обсидиановая кирка",
+  "Золотая кирка",
+  "Алмазная кирка",
+  "Огненная кирка",
+  "Изумрудная кирка",
+  "Аметистовое пламя",
+  "Кирка чёрного сияния",
   "Кирка мастера",
   "Кирка глубин",
   "Кирка хранителя",
   "Сердце кузни",
 ];
+const toolMaterials = [
+  ["steel", "#a8b6b3", "#e2e8dd", "#475956"],
+  ["bronze", "#bf8b61", "#f0cc9e", "#654737"],
+  ["gold", "#efba4c", "#fff2bb", "#996021"],
+  ["diamond", "#72d9ef", "#e2ffff", "#287b9c"],
+  ["fire", "#f0943e", "#ffe6a0", "#8c3425"],
+  ["emerald", "#52c798", "#c1ffe0", "#20654f"],
+  ["violet-fire", "#ae78ed", "#eed2ff", "#503079"],
+  ["black", "#202737", "#cbdcf3", "#060a11"],
+  ["master", "#d6bd81", "#fff2ca", "#605640"],
+  ["depth", "#729ebc", "#d2edf3", "#2d475f"],
+  ["guardian", "#cba2c5", "#ffe3e4", "#5c4266"],
+  ["heart", "#e0ab72", "#fff2c6", "#81503e"],
+];
 export const TOOLS = toolNames.map((name, index) => ({
   name,
   tier: index + 1,
   kind: index % 3,
-  color: ["#a8b6b3", "#b8956f", "#b8c4c0", "#99aaa3", "#b8bda7", "#c5b789"][
-    index % 6
-  ],
+  material: toolMaterials[index][0],
+  color: toolMaterials[index][1],
+  light: toolMaterials[index][2],
+  shade: toolMaterials[index][3],
   hits: 10 + index * 3,
   multiplier: 1.85 ** index,
 }));
@@ -444,6 +459,12 @@ export function needsRestart(s, active = 0) {
 }
 export function restartAttempt(s, active = 0) {
   if (!needsRestart(s, active)) return false;
+  return restartMine(s);
+}
+// A manual restart uses the same checkpoint as a failed attempt, even while
+// tools are flying. The caller discards those bodies when rebuilding the mine.
+export function restartMine(s) {
+  if (s.levelComplete) return false;
   const entry = s.entry?.level === s.level ? s.entry : snapshotEntry(s);
   Object.assign(s, {
     coins: entry.coins,

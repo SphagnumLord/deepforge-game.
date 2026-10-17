@@ -257,6 +257,34 @@ h2 {
   align-items: center;
   gap: 6px;
 }
+.mine-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 18px 13px;
+}
+.mine-controls > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+.restart-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 35px;
+  padding: 6px 12px;
+  background: #554833;
+  border: 1px solid #a58a56;
+  border-radius: 7px;
+  color: #f1d5a0;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.restart-button > span { font-size: 19px; }
+.restart-button:hover { background: #6a5739; }
+.restart-button:disabled { opacity: .4; cursor: default; }
 .biome-dot {
   width: 5px;
   height: 5px;
@@ -443,8 +471,58 @@ canvas {
   box-shadow: inset 0 0 16px #86d0b522;
 }
 .slot.just-merged {
-  animation: merge-flash 0.45s ease-out;
+  animation: merge-flash 0.65s ease-out;
 }
+.slot.just-merged::before {
+  content: "✦";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff0b3;
+  font-size: 40px;
+  pointer-events: none;
+  animation: merge-spark .6s ease-out both;
+}
+.slot.drag-source > * { opacity: .16; }
+.slot.drag-source { border-style: dashed; }
+.slot.drop-ready {
+  background: #375c4d;
+  border-color: #c5f6c8;
+  box-shadow: 0 0 0 2px #a6e8be55, inset 0 0 20px #a6e8be33;
+}
+.slot.drop-invalid { border-color: #bd806c; }
+.dragging-tools, .dragging-tools * { cursor: grabbing !important; }
+.drag-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 68px;
+  height: 84px;
+  border: 1px solid #e3c17d;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #4d5141f5, #203532f5);
+  box-shadow: 0 10px 25px #0008, 0 0 18px #d6bb6b33;
+  pointer-events: none;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  will-change: transform;
+}
+.drag-ghost svg { width: 54px; height: 62px; }
+.drag-ghost small { font: 700 9px "Segoe UI", sans-serif; color: #f3dcb0; }
+.drag-ghost.can-merge { border-color: #b9efc7; box-shadow: 0 0 22px #a6e8be66; }
+.merge-flight { background: #2b4038d9; }
+.merge-feedback {
+  min-height: 16px;
+  margin: 11px 0 0;
+  color: #c8d9b9;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.slot .tool-flame { animation: tool-ember 1.7s ease-in-out infinite alternate; }
 .slot[aria-disabled="true"] {
   cursor: default;
 }
@@ -886,6 +964,14 @@ footer button {
   100% {
     transform: scale(1);
   }
+}
+@keyframes merge-spark {
+  0% { opacity: 1; transform: scale(.3) rotate(0); }
+  100% { opacity: 0; transform: scale(1.7) rotate(55deg); }
+}
+@keyframes tool-ember {
+  from { opacity: .65; }
+  to { opacity: 1; }
 }
 @keyframes celebrate {
   50% {

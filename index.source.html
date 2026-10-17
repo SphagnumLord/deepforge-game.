@@ -98,6 +98,12 @@
                 ><span id="biome">Медные предгорья</span></span
               ><span id="depth">100 м под землёй</span>
             </div>
+            <div class="mine-controls">
+              <span>Новая попытка на этой глубине</span>
+              <button class="restart-button" id="reset" type="button">
+                <span aria-hidden="true">↻</span> Заново шахту
+              </button>
+            </div>
             <div id="bossStatus" class="boss-status hidden" aria-live="polite">
               <div>
                 <strong id="bossName">Хранитель</strong><b id="bossHp"></b>
@@ -187,6 +193,9 @@
                 id="inventory"
                 aria-label="Инвентарь"
               ></div>
+              <p id="mergeFeedback" class="merge-feedback" role="status">
+                Перетащи кирку на такую же — получишь уровень выше.
+              </p>
               <div class="selected-tool">
                 <span id="selectedIcon"></span>
                 <div>
@@ -274,7 +283,7 @@
       <footer>
         <span>DEEPFORGE <i>·</i> Сделано для маленьких открытий</span
         ><button id="music" aria-pressed="false">Мелодия: вкл</button
-        ><button id="reset">Начать заново</button>
+        >
       </footer>
     </div>
     <dialog id="tutorial" class="dialog">
@@ -344,17 +353,18 @@
       <div id="mineMap" class="mine-map"></div>
     </dialog>
     <dialog id="resetDialog" class="dialog reset-dialog">
-      <p class="eyebrow">НОВАЯ ИСТОРИЯ</p>
-      <h2>Начать с чистого листа?</h2>
+      <p class="eyebrow">НОВАЯ ПОПЫТКА</p>
+      <h2>Начать эту шахту заново?</h2>
       <p>
-        Монеты, инструменты, трофеи и прогресс шахт будут сброшены. Отменить это
-        действие нельзя.
+        Вернутся монеты, алмазы, сила и инструменты на момент входа в шахту.
+        Находки и покупки текущей попытки откатятся. Пройденные шахты,
+        рекорд и трофеи сохранятся.
       </p>
       <div class="dialog-actions">
         <button id="resetCancel" class="button secondary">
-          Продолжить игру</button
-        ><button id="resetConfirm" class="button danger">
-          Сбросить прогресс
+          Продолжить добычу</button
+        ><button id="resetConfirm" class="button primary">
+          Перезапустить шахту
         </button>
       </div>
     </dialog>

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   BALANCE, LEVELS, createState, restoreState, openBoard, generateLevel,
   rescue, canRescue, launch, buyTool, forgeTool, forgeCost, upgrade, upgradeCost,
-  needsRestart, restartAttempt, recommendedTier, merge, hitBlock, hitBoss,
+  needsRestart, restartAttempt, restartMine, recommendedTier, merge, hitBlock, hitBoss,
   nextLevel, attemptBudget,
 } from "../src/core.js";
 import { simulateCampaign, simulateMine } from "../scripts/simulate-economy.mjs";
@@ -14,6 +14,42 @@ function expendSupplies(s) {
   while ((index = buyTool(s)) >= 0) launch(s, index);
   while ((index = forgeTool(s)) >= 0) launch(s, index);
 }
+
+test("manual restart restores only the current mine checkpoint, including a damaged boss", () => {
+  const s = { ...createState(), level: 30, best: 46, coins: 5000, gems: 20,
+    power: 4, trophies: [15], campaignWins: 2, muted: true, musicMuted: true,
+    tutorialDone: true };
+  const blocks = openBoard(s), entry = structuredClone(s.entry);
+  buyTool(s);
+  upgrade(s);
+  hitBlock(s, blocks, 0, 1e6, 12);
+  s.boss.hp = 10;
+  s.boss.hits = 7;
+  s.rescueUsed = true;
+  assert.equal(needsRestart(s), false);
+  assert.equal(restartMine(s), true);
+  assert.equal(s.level, 30);
+  assert.equal(s.best, 46);
+  assert.equal(s.campaignWins, 2);
+  assert.deepEqual(s.trophies, [15]);
+  assert.equal(s.muted, true);
+  assert.equal(s.musicMuted, true);
+  for (const key of ["coins", "gems", "power", "runs", "inventory"])
+    assert.deepEqual(s[key], entry[key]);
+  assert.deepEqual(openBoard(s), generateLevel(30));
+  assert.equal(s.boss.hp, s.boss.maxHp);
+  assert.equal(s.boss.hits, 0);
+  assert.equal(s.board.earned, 0);
+  assert.equal(s.board.spent, 0);
+  assert.equal(s.attemptNumber, 2);
+  const restored = restoreState(JSON.parse(JSON.stringify(s)));
+  assert.equal(restored.level, 30);
+  assert.deepEqual(restored.entry, s.entry);
+  s.levelComplete = true;
+  const completed = structuredClone(s);
+  assert.equal(restartMine(s), false);
+  assert.deepEqual(s, completed, "a completed mine cannot be replayed to farm its reward");
+});
 
 test("rescue quota survives reload; a failed normal attempt rolls back its loot and expenses", () => {
   const s = createState(), blocks = openBoard(s), entry = structuredClone(s.entry);

@@ -8,6 +8,7 @@ export class MineRenderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.particles = [];
+    this.waves = [];
     this.time = 0;
     this.ready = loadToolArt();
     this.rocks = createRockTextures();
@@ -39,6 +40,7 @@ export class MineRenderer {
   }
   update() {
     this.time++;
+    this.waves = this.waves.filter((wave) => --wave.life > 0);
     for (const p of this.particles) {
       p.x += p.vx;
       p.y += p.vy;
@@ -46,6 +48,37 @@ export class MineRenderer {
       p.life--;
     }
     this.particles = this.particles.filter((p) => p.life > 0);
+  }
+  blast(x, y) {
+    if (!this.reducedMotion) this.waves.push({ x, y, life: 24 });
+  }
+  drawMist(c) {
+    const seconds = this.reducedMotion ? 0 : this.time / 60;
+    c.save();
+    // Reserve both shelves even before the first boss. Fog never paints over
+    // the future trophy silhouettes or the player's aiming instructions.
+    c.beginPath();
+    c.rect(0, 0, FIELD.width, 112);
+    c.roundRect(21, 36, 164, 43, 8);
+    c.roundRect(225, 36, 123, 43, 8);
+    c.clip("evenodd");
+    c.globalCompositeOperation = "screen";
+    for (let n = 0; n < 6; n++) {
+      const phase = seconds * (0.25 + n * 0.017) + n * 1.9;
+      const x = 210 + Math.sin(phase) * (17 + n * 2);
+      const y = 17 + n * 6 + Math.cos(phase * 0.8) * 7;
+      c.save();
+      c.translate(x, y);
+      c.rotate(Math.sin(phase * 0.65) * 0.12);
+      c.globalAlpha = 0.31 + Math.sin(phase + 1) * 0.065;
+      c.drawImage(this.mist[n % 3], -104, -25, 208, 50 + n * 3);
+      c.restore();
+    }
+    // A slender rising curl catches the warm light beneath the lamp.
+    c.globalAlpha = 0.42;
+    c.drawImage(this.mist[1], 180 + Math.sin(seconds * 0.36) * 9,
+      35 + Math.cos(seconds * 0.22) * 7, 68, 58);
+    c.restore();
   }
   draw(state, blocks, physics, selected, pointerX) {
     const c = this.ctx,
@@ -70,16 +103,7 @@ export class MineRenderer {
     light.addColorStop(1, "#edc27900");
     c.fillStyle = light;
     c.fillRect(0, 0, w, 230);
-    c.save();
-    c.globalCompositeOperation = "screen";
-    c.globalAlpha = 0.66;
-    const drift = this.reducedMotion ? 0 : this.time / 190;
-    for (let n = 0; n < 4; n++) {
-      const x = 126 + n * 33 + Math.sin(drift + n * 2.1) * 17;
-      const y = 22 + n * 8 + Math.cos(drift * 0.7 + n) * 8;
-      c.drawImage(this.mist, x - 58, y, 146 + n * 8, 56 + n * 5);
-    }
-    c.restore();
+    this.drawMist(c);
     c.strokeStyle = "#8b7953";
     c.lineWidth = 1;
     c.beginPath();
@@ -211,10 +235,18 @@ export class MineRenderer {
       } else {
         c.fillStyle = b.material === 4 ? "#f3d392" : "#e2d8be";
         c.font = '600 11px "Segoe UI",sans-serif';
+        const label = String(Math.ceil(b.hp));
+        const labelWidth = c.measureText(label).width + 8;
+        c.save();
+        c.fillStyle = "#1220288c";
+        c.beginPath();
+        c.roundRect(x + 27 - labelWidth / 2, y + 13, labelWidth, 14, 3);
+        c.fill();
+        c.restore();
         c.save();
         c.shadowColor = "#101a20";
         c.shadowBlur = 3;
-        c.fillText(String(Math.ceil(b.hp)), x + 27, y + 24);
+        c.fillText(label, x + 27, y + 24);
         c.restore();
       }
       if (b.minTier > 1) {
@@ -252,6 +284,13 @@ export class MineRenderer {
       );
     if (bossActive(state))
       drawBoss(c, theme, state.boss, physics?.boss?.body, this.time);
+    for (const wave of this.waves) {
+      c.strokeStyle = `rgba(244, 204, 136, ${wave.life / 40})`;
+      c.lineWidth = 1 + wave.life / 8;
+      c.beginPath();
+      c.arc(wave.x, wave.y, 6 + (24 - wave.life) * 2.2, 0, Math.PI * 2);
+      c.stroke();
+    }
     for (const p of this.particles) {
       c.globalAlpha = Math.max(0, p.life / 50);
       c.fillStyle = p.color;

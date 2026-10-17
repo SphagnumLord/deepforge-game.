@@ -1,23 +1,28 @@
-// Original 56-second ambient score in D major / B minor. Sparse felt-like
-// notes float over slow add9 pads; no downloaded recordings or audio assets.
+// Original 16-bar lantern theme: a warm minor-key music-box motif, soft
+// plucked answers, walking bass and a brushed pulse. No recordings are loaded.
+const hz = (midi) => midi ? 440 * 2 ** ((midi - 69) / 12) : 0;
+const beat = 60 / 84;
+const chords = [
+  [50, 57, 60, 65], [46, 53, 57, 62], [53, 60, 64, 67], [48, 55, 57, 64],
+  [43, 50, 57, 62], [50, 57, 60, 65], [52, 58, 62, 67], [45, 52, 55, 61],
+  [50, 57, 60, 65], [46, 53, 57, 62], [53, 60, 64, 69], [48, 55, 59, 64],
+  [43, 50, 57, 62], [46, 53, 57, 62], [45, 52, 55, 61], [50, 57, 60, 65],
+];
 export const AMBIENT_SCORE = Object.freeze({
-  chordSeconds: 7,
-  chords: [
-    [146.83, 220, 329.63],
-    [196, 293.66, 440],
-    [123.47, 185, 293.66],
-    [164.81, 246.94, 369.99],
-    [146.83, 220, 369.99],
-    [196, 293.66, 440],
-    [123.47, 220, 329.63],
-    [164.81, 220, 329.63],
-  ],
+  bpm: 84,
+  chordSeconds: beat * 4,
+  chords: chords.map((chord) => chord.map(hz)),
   melody: [
-    440, 554.37, 659.25, 0, 587.33, 440, 369.99, 0, 493.88, 587.33, 739.99,
-    659.25, 554.37, 0, 440, 0, 440, 659.25, 739.99, 0, 659.25, 587.33, 493.88,
-    0, 369.99, 440, 554.37, 0, 493.88, 440, 329.63, 0,
-  ],
-  noteSeconds: 1.75,
+    69, 0, 72, 74, 0, 72, 69, 67, 65, 0, 69, 72, 0, 69, 67, 0,
+    67, 0, 71, 72, 74, 0, 72, 67, 64, 0, 67, 69, 0, 67, 64, 0,
+    69, 0, 72, 74, 77, 0, 74, 72, 69, 0, 65, 69, 72, 0, 69, 0,
+    67, 0, 70, 74, 0, 72, 70, 67, 69, 0, 73, 76, 0, 73, 69, 0,
+    77, 0, 76, 74, 0, 72, 74, 69, 74, 0, 72, 69, 0, 65, 69, 0,
+    72, 0, 76, 79, 0, 76, 72, 69, 67, 0, 71, 74, 0, 72, 67, 0,
+    70, 0, 69, 67, 74, 0, 72, 70, 69, 0, 65, 62, 0, 65, 69, 0,
+    73, 0, 76, 79, 0, 76, 73, 69, 74, 0, 72, 69, 65, 0, 62, 0,
+  ].map(hz),
+  noteSeconds: beat / 2,
 });
 export class GameAudio {
   constructor(muted = false, musicMuted = false) {
@@ -30,6 +35,8 @@ export class GameAudio {
     this.note = 0;
     this.nextChord = 0;
     this.nextNote = 0;
+    this.beat = 0;
+    this.nextBeat = 0;
     this.voices = new Set();
   }
   unlock() {
@@ -50,12 +57,12 @@ export class GameAudio {
     this.music.gain.value = this.musicMuted ? 0 : 0.48;
     const filter = c.createBiquadFilter();
     filter.type = "lowpass";
-    filter.frequency.value = 1800;
+    filter.frequency.value = 2200;
     this.music.connect(filter);
     filter.connect(c.destination);
     const reverb = c.createConvolver(),
       wet = c.createGain();
-    wet.gain.value = 0.32;
+    wet.gain.value = 0.24;
     const impulse = c.createBuffer(
       2,
       Math.floor(c.sampleRate * 2.8),
@@ -146,43 +153,71 @@ export class GameAudio {
       gain.disconnect();
     };
   }
+  noise(start, length, volume, bus, frequency = 1500, type = "bandpass") {
+    const c = this.context;
+    const buffer = c.createBuffer(1, Math.ceil(c.sampleRate * length), c.sampleRate);
+    const samples = buffer.getChannelData(0);
+    for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length);
+    const source = c.createBufferSource(), filter = c.createBiquadFilter(), gain = c.createGain();
+    source.buffer = buffer;
+    filter.type = type;
+    filter.frequency.value = frequency;
+    filter.Q.value = 0.65;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(volume, start + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + length);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(bus);
+    source.start(start);
+    this.voices.add(source);
+    source.onended = () => {
+      this.voices.delete(source);
+      source.disconnect(); filter.disconnect(); gain.disconnect();
+    };
+  }
   schedule() {
-    if (
-      !this.context ||
-      this.context.state !== "running" ||
-      this.musicMuted ||
-      this.paused ||
-      this.muted
-    )
-      return;
-    const now = this.context.currentTime,
-      horizon = now + 0.3;
+    if (!this.context || this.context.state !== "running" || this.musicMuted || this.paused || this.muted) return;
+    const now = this.context.currentTime, horizon = now + 0.3;
     if (this.nextChord < now - 0.3) this.nextChord = now + 0.08;
-    if (this.nextNote < now - 0.3) this.nextNote = now + 0.5;
+    if (this.nextNote < now - 0.3) this.nextNote = now + 0.08;
+    if (this.nextBeat < now - 0.3) this.nextBeat = now + 0.08;
     while (this.nextChord < horizon) {
-      const chord =
-        AMBIENT_SCORE.chords[this.chord++ % AMBIENT_SCORE.chords.length];
-      for (const hz of chord)
-        this.tone(hz, this.nextChord, 9.5, 0.018, this.music, "sine", 1.9);
-      this.tone(
-        chord[0] / 2,
-        this.nextChord,
-        9,
-        0.012,
-        this.music,
-        "sine",
-        2.2,
-      );
+      const chord = AMBIENT_SCORE.chords[this.chord++ % AMBIENT_SCORE.chords.length];
+      for (const frequency of chord)
+        this.tone(frequency, this.nextChord, 4.1, 0.011, this.music, "sine", 0.7);
       this.nextChord += AMBIENT_SCORE.chordSeconds;
     }
     while (this.nextNote < horizon) {
-      const hz =
-        AMBIENT_SCORE.melody[this.note++ % AMBIENT_SCORE.melody.length];
-      if (hz) {
-        this.tone(hz, this.nextNote, 3.1, 0.027, this.music, "sine", 0.035);
-        this.tone(hz * 2, this.nextNote, 1.4, 0.003, this.music, "sine", 0.025);
+      const step = this.note++ % AMBIENT_SCORE.melody.length;
+      const frequency = AMBIENT_SCORE.melody[step];
+      const start = this.nextNote + (step % 2 ? beat * 0.08 : 0);
+      if (frequency) {
+        const volume = step < 64 ? 0.029 : 0.034;
+        this.tone(frequency, start, 1.25, volume, this.music, "sine", 0.012);
+        this.tone(frequency, start, 0.32, 0.006, this.music, "triangle", 0.008);
+        this.tone(frequency * 2, start, 0.55, 0.003, this.music, "sine", 0.008);
+        // A quiet answer gives the motif a sense of space and continuity.
+        if (step % 4 === 0)
+          this.tone(frequency, start + beat * 0.75, 0.85, 0.006, this.music, "sine", 0.018);
+      } else if (step % 4 === 1) {
+        const chord = AMBIENT_SCORE.chords[Math.floor(step / 8)];
+        this.tone(chord[2] * 2, start, 0.8, 0.008, this.music, "sine", 0.02);
       }
       this.nextNote += AMBIENT_SCORE.noteSeconds;
+    }
+    while (this.nextBeat < horizon) {
+      const step = this.beat++ % 64;
+      const chord = AMBIENT_SCORE.chords[Math.floor(step / 4)];
+      const pulse = step % 4;
+      if (pulse !== 1) {
+        const bass = chord[pulse === 2 ? 1 : 0] / 2;
+        this.tone(bass, this.nextBeat, beat * 0.85, 0.028, this.music, "triangle", 0.018);
+        this.tone(bass * 2, this.nextBeat, 0.24, 0.005, this.music, "sine", 0.012);
+      }
+      if (pulse % 2) this.noise(this.nextBeat + beat * 0.04, 0.07, 0.012, this.music, 2200, "highpass");
+      else this.tone(175, this.nextBeat, 0.065, 0.008, this.music, "triangle", 0.004);
+      this.nextBeat += beat;
     }
   }
   play(kind) {
@@ -194,29 +229,26 @@ export class GameAudio {
     )
       return;
     if (kind === "toolBreak") {
+      const start = this.context.currentTime;
+      this.noise(start, 0.22, 0.075, this.effects, 1700);
+      this.tone(185, start, 0.18, 0.028, this.effects, "triangle", 0.004);
+      this.tone(680, start + 0.035, 0.16, 0.008, this.effects, "sine", 0.004);
+      return;
+    }
+    if (kind === "explosion") {
       const c = this.context, start = c.currentTime;
-      const noise = c.createBuffer(1, Math.floor(c.sampleRate * 0.16), c.sampleRate);
-      const samples = noise.getChannelData(0);
-      for (let i = 0; i < samples.length; i++) samples[i] = (Math.random() * 2 - 1) * (1 - i / samples.length);
-      const source = c.createBufferSource(), filter = c.createBiquadFilter(), gain = c.createGain();
-      source.buffer = noise;
-      filter.type = "bandpass";
-      filter.frequency.value = 1150;
-      filter.Q.value = 0.65;
+      this.noise(start, 0.46, 0.17, this.effects, 1500, "lowpass");
+      const osc = c.createOscillator(), gain = c.createGain();
+      osc.frequency.setValueAtTime(115, start);
+      osc.frequency.exponentialRampToValueAtTime(34, start + 0.4);
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.022, start + 0.004);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.15);
-      source.connect(filter);
-      filter.connect(gain);
-      gain.connect(this.effects);
-      source.start(start);
-      this.voices.add(source);
-      source.onended = () => {
-        this.voices.delete(source);
-        source.disconnect(); filter.disconnect(); gain.disconnect();
-      };
-      this.tone(185, start, 0.13, 0.008, this.effects, "triangle", 0.004);
-      this.tone(740, start + 0.025, 0.1, 0.003, this.effects, "sine", 0.004);
+      gain.gain.exponentialRampToValueAtTime(0.15, start + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.48);
+      osc.connect(gain); gain.connect(this.effects);
+      osc.start(start); osc.stop(start + 0.5);
+      this.voices.add(osc);
+      osc.onended = () => { this.voices.delete(osc); osc.disconnect(); gain.disconnect(); };
+      this.tone(410, start + 0.06, 0.24, 0.014, this.effects, "triangle", 0.004);
       return;
     }
     const notes = {

@@ -73,6 +73,49 @@ export function createRockTextures() {
         c.stroke();
       }
     }
+    // Decorative ore never changes a block's reward or creates diamonds.
+    // A shadowed seam, branching mineral and small facets stay visible at 1x.
+    const ore = [
+      ["#bf8150", "#f0c28b"], ["#7eabba", "#d2e7e5"],
+      ["#d58457", "#ffd0a0"], ["#9973c4", "#e4c1ff"],
+      ["#dfac46", "#fff0b3"], ["#51b99d", "#c5ffe1"],
+    ][kind];
+    const points = Array.from({ length: 6 }, (_, i) => ({
+      x: -3 + i * 12, y: 8 + rng() * 18,
+    }));
+    const seam = new Path2D();
+    seam.moveTo(points[0].x, points[0].y);
+    for (const point of points.slice(1)) seam.lineTo(point.x, point.y);
+    for (const i of [1, 3, 4]) {
+      seam.moveTo(points[i].x, points[i].y);
+      seam.lineTo(points[i].x + 5, points[i].y + (i % 2 ? -10 : 9));
+    }
+    c.lineJoin = "round";
+    c.strokeStyle = "#08151dba";
+    c.lineWidth = 3.7;
+    c.stroke(seam);
+    c.strokeStyle = ore[0];
+    c.lineWidth = 1.9;
+    c.stroke(seam);
+    c.strokeStyle = ore[1] + "b0";
+    c.lineWidth = 0.6;
+    c.stroke(seam);
+    for (const point of points.slice(1, 5)) {
+      const x = point.x + 1, y = point.y - 1, size = 1.5 + rng() * 1.8;
+      c.beginPath();
+      c.moveTo(x, y - size);
+      c.lineTo(x + size * 1.1, y);
+      c.lineTo(x + 0.4, y + size);
+      c.lineTo(x - size * 0.8, y + 0.3);
+      c.closePath();
+      c.fillStyle = ore[0];
+      c.fill();
+      c.strokeStyle = ore[1];
+      c.lineWidth = 0.65;
+      c.stroke();
+      c.fillStyle = ore[1];
+      c.fillRect(x - 0.5, y - size + 0.5, 1, 1);
+    }
     // Hairline cracks differ per sample, without obscuring the HP labels.
     c.strokeStyle = "#07121b55";
     c.lineWidth = 0.55;
@@ -88,16 +131,38 @@ export function createRockTextures() {
 }
 
 export function createLampMist() {
-  const mist = document.createElement("canvas");
-  mist.width = 192;
-  mist.height = 96;
-  const c = mist.getContext("2d");
-  c.scale(1, 0.5);
-  const veil = c.createRadialGradient(96, 96, 0, 96, 96, 96);
-  veil.addColorStop(0, "#d9d5b82e");
-  veil.addColorStop(0.35, "#d0d1ba16");
-  veil.addColorStop(1, "#ced6c000");
-  c.fillStyle = veil;
-  c.fillRect(0, 0, 192, 192);
-  return mist;
+  // Three coherent-noise wisps are generated once, then advected in opposite
+  // directions. The feathered density gives rolling fog instead of flat halos.
+  return Array.from({ length: 3 }, (_, variant) => {
+    const mist = document.createElement("canvas");
+    mist.width = 256;
+    mist.height = 128;
+    const c = mist.getContext("2d"), pixels = c.createImageData(256, 128);
+    const rng = random(3257 + variant * 173);
+    const grid = Float32Array.from({ length: 33 * 33 }, () => rng());
+    const smooth = (n) => n * n * (3 - 2 * n);
+    const noise = (x, y) => {
+      const ix = Math.floor(x) % 32, iy = Math.floor(y) % 32;
+      const fx = smooth(x % 1), fy = smooth(y % 1);
+      const top = grid[iy * 33 + ix] * (1 - fx) + grid[iy * 33 + ix + 1] * fx;
+      const bottom = grid[(iy + 1) * 33 + ix] * (1 - fx) + grid[(iy + 1) * 33 + ix + 1] * fx;
+      return top * (1 - fy) + bottom * fy;
+    };
+    for (let y = 0; y < 128; y++) for (let x = 0; x < 256; x++) {
+      const nx = (x - 128) / 128, ny = (y - 64) / 64;
+      const edge = Math.max(0, 1 - nx * nx - ny * ny) ** 1.6;
+      const swirl = Math.sin(x / 29 + Math.sin(y / 17) * 1.8) * 6;
+      const density = noise(x / 42, (y + 12 + swirl) / 26) * 0.6
+        + noise(x / 18, (y + 12) / 13) * 0.28
+        + noise(x / 8, y / 7) * 0.12;
+      const ridge = Math.max(0, 1 - Math.abs(density - 0.47) * 3.1);
+      const i = (y * 256 + x) * 4;
+      pixels.data[i] = 221;
+      pixels.data[i + 1] = 219;
+      pixels.data[i + 2] = 197;
+      pixels.data[i + 3] = Math.round(edge * ridge ** 2 * 112);
+    }
+    c.putImageData(pixels, 0, 0);
+    return mist;
+  });
 }

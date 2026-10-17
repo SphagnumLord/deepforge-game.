@@ -4,6 +4,7 @@ import {
   openBoard,
   STORAGE,
   LEGACY_STORAGE,
+  generateLevel,
 } from "../../src/core.js";
 const test = base.extend({
   page: async ({ page }, use) => {
@@ -133,12 +134,45 @@ test("touch dragging merges once without a duplicate tap", async ({
     type: "touchMove",
     touchPoints: [{ x: b.x + b.width / 2, y: b.y + b.height / 2 }],
   });
+  await expect(page.locator(".drag-ghost:not(.settling)")).toBeVisible();
+  await expect(slot(page, 0)).toHaveClass(/drag-source/);
+  await expect(slot(page, 1)).toHaveClass(/drop-ready/);
+  const ghost = await page.locator(".drag-ghost").boundingBox();
+  expect(Math.abs(ghost.x + ghost.width / 2 - b.x - b.width / 2)).toBeLessThan(3);
   await session.send("Input.dispatchTouchEvent", {
     type: "touchEnd",
     touchPoints: [],
   });
   await expect(slot(page, 0)).toHaveAttribute("data-tier", "null");
   await expect(slot(page, 1)).toHaveAttribute("data-tier", "2");
+  await expect(page.locator(".drag-ghost")).toHaveCount(0);
+  await expect(page.locator("#mergeFeedback")).toContainText("Уровень 2");
+});
+
+test("dragging to a different tier or cancelling preserves both tools and clears the ghost", async ({ page }) => {
+  await seed(page);
+  await start(page);
+  await slot(page, 0).scrollIntoViewIfNeeded();
+  const source = await slot(page, 0).boundingBox(), target = await slot(page, 4).boundingBox();
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 7 });
+  await expect(slot(page, 4)).toHaveClass(/drop-invalid/);
+  await expect(page.locator(".drag-ghost")).toBeVisible();
+  await page.mouse.up();
+  await expect(slot(page, 0)).toHaveAttribute("data-tier", "1");
+  await expect(slot(page, 4)).toHaveAttribute("data-tier", "2");
+  await expect(page.locator(".drag-ghost")).toHaveCount(0);
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(source.x + source.width / 2, source.y - 30, { steps: 5 });
+  await expect(page.locator(".drag-ghost")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(page.locator(".drag-ghost")).toHaveCount(0);
+  await expect(slot(page, 0)).not.toHaveClass(/drag-source/);
+  await expect(page.locator("#pauseShade")).not.toBeVisible();
+  await expect(slot(page, 0)).toHaveAttribute("data-tier", "1");
 });
 
 test("manual pause freezes simulation and resumed tools continue mining", async ({
@@ -160,7 +194,7 @@ test("manual pause freezes simulation and resumed tools continue mining", async 
   );
 });
 
-test("legacy progress migrates and reset requires confirmation", async ({
+test("legacy progress migrates and a confirmed restart preserves its wallet and power", async ({
   page,
 }) => {
   await seed(
@@ -176,11 +210,53 @@ test("legacy progress migrates and reset requires confirmation", async ({
   await expect(page.locator("#coins")).toHaveText("777");
   await page.locator("#reset").click();
   await page.locator("#resetConfirm").click();
-  await expect(page.locator("#coins")).toHaveText("180");
-  await expect(page.locator("#damage")).toHaveText("2");
+  await expect(page.locator("#coins")).toHaveText("777");
+  await expect(page.locator("#damage")).toHaveText("6");
+  await expect(page.locator("#attemptNumber")).toHaveText("2");
   expect(
-    await page.evaluate((key) => localStorage.getItem(key), LEGACY_STORAGE),
-  ).toBeNull();
+    await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).version, STORAGE),
+  ).toBe(4);
+});
+
+test("the visible restart refunds this attempt, removes flying tools and keeps the expedition", async ({ page }) => {
+  const save = { ...createState(), tutorialDone: true, level: 31, best: 50, coins: 4000,
+    gems: 12, power: 4, trophies: [15, 30], musicMuted: true };
+  openBoard(save);
+  const entry = structuredClone(save.entry);
+  save.board.hp[0] = 0;
+  save.board.earned = 50;
+  save.coins += 50;
+  await seed(page, save);
+  await page.goto("/");
+  await expect(page.locator("#reset")).toBeVisible();
+  expect(await page.locator(".mine-panel #reset").count()).toBe(1);
+  await page.locator("#buy").click();
+  await page.locator("#upgrade").click();
+  await page.locator("#dropSelected").isVisible().then(async (visible) => {
+    if (visible) await page.locator("#dropSelected").click();
+    else await page.locator("#game").click({ position: { x: 150, y: 65 } });
+  });
+  await expect(page.locator("#game")).toHaveAttribute("data-active", "1");
+  await page.locator("#reset").click();
+  const coins = await page.locator("#coins").textContent();
+  await page.locator("#resetCancel").click();
+  await expect(page.locator("#coins")).toHaveText(coins);
+  await page.locator("#reset").click();
+  await page.locator("#resetConfirm").click();
+  await expect(page.locator("#game")).toHaveAttribute("data-active", "0");
+  await expect(page.locator("#game")).toHaveAttribute("data-destroyed", "0");
+  await expect(page.locator("#attemptNumber")).toHaveText("2");
+  const restored = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE);
+  expect(restored.level).toBe(31);
+  expect(restored.best).toBe(50);
+  expect(restored.trophies).toEqual([15, 30]);
+  expect(restored.musicMuted).toBe(true);
+  for (const key of ["coins", "gems", "power", "inventory"]) expect(restored[key]).toEqual(entry[key]);
+  expect(restored.board.hp).toEqual(generateLevel(31).map((b) => b.maxHp));
+  await page.reload();
+  await expect(page.locator("#level")).toHaveText("31");
+  await expect(page.locator("#attemptNumber")).toHaveText("2");
+  await expect(page.locator(".trophy-item")).toHaveCount(2);
 });
 
 test("cleared final mine restores without duplicate payout and starts a new campaign", async ({
@@ -552,6 +628,74 @@ test("lamp mist moves gently, freezes on pause and respects reduced motion", asy
   await page.reload();
   await expect(page.locator("#buy")).toBeEnabled();
   expect(await mistChanges(page)).toBe(0);
+});
+
+test("moving fog leaves both boss trophy shelves clear", async ({ page }) => {
+  await seed(page, { trophies: [15, 30, 45, 60, 75, 90, 105, 120] });
+  await start(page);
+  const result = await page.evaluate(async () => {
+    const canvas = document.getElementById("game"), c = canvas.getContext("2d"), scale = canvas.width / 420;
+    const sample = (x, y, w, h) => c.getImageData(x * scale, y * scale, w * scale, h * scale).data;
+    const before = [sample(25, 43, 154, 27), sample(232, 43, 108, 27), sample(190, 8, 35, 79)];
+    for (let i = 0; i < 40; i++) await new Promise(requestAnimationFrame);
+    return [sample(25, 43, 154, 27), sample(232, 43, 108, 27), sample(190, 8, 35, 79)].map((after, n) =>
+      after.reduce((count, value, i) => count + (value !== before[n][i] ? 1 : 0), 0));
+  });
+  expect(result[0]).toBe(0);
+  expect(result[1]).toBe(0);
+  expect(result[2]).toBeGreaterThan(100);
+});
+
+test("a real bomb collision produces an audible low explosion while music is disabled", async ({ page }) => {
+  await page.addInitScript(() => {
+    const Native = window.AudioContext;
+    window.explosionAudio = { rms: 0, duration: 0, sampled: false };
+    window.AudioContext = class extends Native {
+      createGain(...args) {
+        const gain = super.createGain(...args);
+        this.effectsBus ||= gain;
+        return gain;
+      }
+      createBufferSource(...args) {
+        const source = super.createBufferSource(...args), start = source.start.bind(source), context = this;
+        source.start = (...parameters) => {
+          window.explosionAudio.duration = source.buffer.duration;
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 2048;
+          context.effectsBus.connect(analyser);
+          let frames = 0;
+          const sample = () => {
+            const data = new Float32Array(analyser.fftSize);
+            analyser.getFloatTimeDomainData(data);
+            window.explosionAudio.rms = Math.max(window.explosionAudio.rms,
+              Math.sqrt(data.reduce((sum, x) => sum + x * x, 0) / data.length));
+            if (++frames < 30) requestAnimationFrame(sample);
+            else { context.effectsBus.disconnect(analyser); window.explosionAudio.sampled = true; }
+          };
+          requestAnimationFrame(sample);
+          return start(...parameters);
+        };
+        return source;
+      }
+    };
+  });
+  const save = { ...createState(), tutorialDone: true, musicMuted: true, inventory: [8, ...Array(11).fill(null)] };
+  const blocks = openBoard(save), bomb = blocks.find((block) => block.type === "bomb");
+  save.board.hp.fill(0);
+  save.board.hp[bomb.id] = 1;
+  await seed(page, save);
+  await page.goto("/");
+  await slot(page, 0).click();
+  const box = await page.locator("#game").boundingBox();
+  await page.locator("#game").click({ position: { x: (21 + bomb.col * 54 + 27) * box.width / 420, y: 65 } });
+  await expect(page.locator("#game")).toHaveAttribute("data-explosions", "1");
+  await page.waitForFunction(() => window.explosionAudio.sampled);
+  const sound = await page.evaluate(() => window.explosionAudio);
+  expect(sound.duration).toBeGreaterThan(0.4);
+  expect(sound.duration).toBeLessThan(0.6);
+  expect(sound.rms).toBeGreaterThan(0.001);
+  expect(sound.rms).toBeLessThan(0.15);
+  await expect(page.locator("#music")).toHaveAttribute("aria-pressed", "true");
 });
 
 test("a real pick breaking produces a quiet crack on the effects bus", async ({ page }) => {
