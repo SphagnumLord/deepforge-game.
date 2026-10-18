@@ -324,6 +324,7 @@ export class GameAudio {
       win: [330, 440, 550, 660],
       error: [110],
       gem: [700, 1000],
+      prize: [523.25, 659.25, 783.99, 1046.5],
       boss: [98, 146.83],
     }[kind] || [220];
     notes.forEach((hz, i) =>

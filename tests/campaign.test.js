@@ -18,12 +18,14 @@ import {
   buyTool,
   shopTier,
   nextLevel,
+  routeColumns, collectRoute,
 } from "../src/core.js";
 import { simulateCampaign } from "../scripts/simulate-economy.mjs";
 
 function clearMine(s) {
   const blocks = openBoard(s);
-  for (const b of blocks) if (b.alive) hitBlock(s, blocks, b.id, 1e7, 12);
+  for (const b of blocks) if (b.alive && routeColumns(s.level).includes(b.col)) hitBlock(s, blocks, b.id, 1e7, 12);
+  for (const col of routeColumns(s.level)) collectRoute(s, col);
   return blocks;
 }
 const totalHp = (n) => generateLevel(n).reduce((sum, b) => sum + b.maxHp, 0);
@@ -64,7 +66,7 @@ test("gold mines are softer and richer while mine 104 keeps its trial armour", (
   }
   assert.ok(totalHp(104) > totalHp(103) * 1.5);
 });
-test("clearing a guardian chamber reveals the boss but pays no completion reward or trophy yet", () => {
+test("collecting the required route caches reveals the boss but pays no completion reward or trophy yet", () => {
   const s = createState();
   s.level = 15;
   openBoard(s);
@@ -143,7 +145,7 @@ test("v2 progress migrates in place without replaying a completed old mine or in
   s.coins = 1234;
   const restored = restoreState(s);
   openBoard(restored);
-  assert.equal(restored.version, 4);
+  assert.equal(restored.version, 5);
   assert.equal(restored.levelComplete, true);
   assert.equal(restored.coins, 1234);
   assert.deepEqual(restored.trophies, []);

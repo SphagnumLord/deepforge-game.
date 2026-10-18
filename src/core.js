@@ -87,7 +87,7 @@ export function random(seed) {
 }
 export function createState() {
   return {
-    version: 4,
+    version: 5,
     coins: BALANCE.startingCoins,
     gems: 0,
     level: 1,
@@ -100,6 +100,8 @@ export function createState() {
     attemptNumber: 1,
     entry: null,
     inventory: [1, 1, 1, 1, 2, ...Array(7).fill(null)],
+    bombs: 0,
+    bonusTools: [],
     board: null,
     boss: null,
     trophies: [],
@@ -172,7 +174,7 @@ export function generateLevel(level) {
   const candidates = blocks
     .filter((b) => b.row >= 5 && b.type !== "bomb")
     .map((b) => ({ block: b, order: seamRandom() }))
-    .sort((a, b) => a.order - b.order);
+    .sort((a, b) => Number(!routeColumns(level).includes(a.block.col)) - Number(!routeColumns(level).includes(b.block.col)) || a.order - b.order);
   for (const { block } of candidates.slice(0, config.diamonds)) {
     block.type = "gem";
     block.minTier = recommendedTier(config.id);
@@ -200,10 +202,42 @@ export function recommendedTier(level) {
 }
 export const isHardMine = (s) =>
   LEVELS[s.level - 1].challenge || LEVELS[s.level - 1].boss;
+export function routeColumns(level) {
+  const count = LEVELS[level - 1].routes;
+  return count === 3 ? [1, 3, 5] : count === 2 ? [2, 4] : [3];
+}
+export function routePrize(level, col) {
+  const columns = routeColumns(level), index = columns.indexOf(col);
+  const next = level === CAMPAIGN_LENGTH ? 1 : level + 1;
+  const tool = columns.length > 1 ? index === 0 : level % 3 === 1;
+  return tool
+    ? { kind: "tool", tier: forgeTier({ level: next }) }
+    : { kind: "bomb" };
+}
+export function routeProgress(s) {
+  return routeColumns(s.level).map((col, index) => {
+    const cleared = Array.from({ length: BALANCE.rows }, (_, row) => s.board?.hp[row * BALANCE.columns + col] === 0).filter(Boolean).length;
+    return { col, index, cleared, open: cleared === BALANCE.rows,
+      claimed: s.board?.claimed?.includes(col) || false, prize: routePrize(s.level, col) };
+  });
+}
+export function routesComplete(s) {
+  return !!s.board && routeColumns(s.level).every((col) => s.board.claimed?.includes(col));
+}
+export function pendingPrizes(s) {
+  return s.board?.legacyGoal ? [] : routeProgress(s).filter((route) => route.claimed).map((route) => route.prize);
+}
+export const prizeLabel = (prize) => prize.kind === "tool" ? `Кирка ур. ${prize.tier}` : "Бомба";
+export function claimBonusTool(s) {
+  const index = s.inventory.indexOf(null);
+  if (s.levelComplete || index < 0 || !s.bonusTools.length) return -1;
+  s.inventory[index] = s.bonusTools.shift();
+  return index;
+}
 export function attemptBudget(s) {
   if (s.level === 1) return BALANCE.startingCoins;
   return Math.ceil(
-    buyCost({ ...s, purchasesThisMine: 0 }) * (isHardMine(s) ? 48 : 12),
+    buyCost({ ...s, purchasesThisMine: 0 }) * (isHardMine(s) ? 24 : 8),
   );
 }
 export const rescueTier = (s) => Math.max(1, shopTier(s) - 1);
@@ -248,7 +282,7 @@ function createBoss(level) {
 }
 export function bossActive(s) {
   return (
-    !!s.boss && s.boss.hp > 0 && !!s.board && s.board.hp.every((hp) => hp === 0)
+    !!s.boss && s.boss.hp > 0 && routesComplete(s)
   );
 }
 export function bossVulnerable(s) {
@@ -273,12 +307,15 @@ export function restoreState(raw) {
     ["purchasesThisMine", 0, 1e6],
     ["campaignWins", 0, 1e6],
     ["updatedAt", 0, 1e15],
+    ["bombs", 0, 10000],
   ])
     s[key] = integer(raw[key], s[key], min, max);
   s.best = Math.max(s.best, s.level);
   s.inventory = raw.inventory.map((v) =>
     Number.isInteger(v) && v >= 1 && v <= BALANCE.maxTier ? v : null,
   );
+  s.bonusTools = Array.isArray(raw.bonusTools)
+    ? raw.bonusTools.filter((tier) => Number.isInteger(tier) && tier >= 1 && tier <= BALANCE.maxTier).slice(0, 1000) : [];
   s.trophies = TROPHIES.filter(
     (t) => Array.isArray(raw.trophies) && raw.trophies.includes(t.level),
   ).map((t) => t.level);
@@ -288,7 +325,7 @@ export function restoreState(raw) {
   const blocks = generateLevel(s.level);
   s.boss = createBoss(s.level);
   if (
-    [2, 3, 4].includes(raw.version) &&
+    [2, 3, 4, 5].includes(raw.version) &&
     raw.board?.level === s.level &&
     Array.isArray(raw.board.hp) &&
     raw.board.hp.length === blocks.length
@@ -308,19 +345,24 @@ export function restoreState(raw) {
       earned: integer(raw.board.earned, 0, 0, 1e9),
       spent: integer(raw.board.spent, 0, 0, 1e9),
       throws: integer(raw.board.throws, 0, 0, 1e6),
+      claimed: [],
+      legacyGoal: raw.board.legacyGoal === true || raw.version < 5 && hp.every((v) => v === 0),
     };
+    s.board.claimed = routeColumns(s.level).filter((col) =>
+      (s.board.legacyGoal || Array.isArray(raw.board.claimed) && raw.board.claimed.includes(col))
+      && hp.every((value, id) => id % BALANCE.columns !== col || value === 0));
     if (s.boss && raw.version >= 3 && raw.boss?.level === s.level) {
       s.boss.hp = integer(raw.boss.hp, s.boss.maxHp, 0, s.boss.maxHp);
       s.boss.hits = integer(raw.boss.hits, 0, 0, 1e6);
     }
     // Preserve already cleared v2 mines, without inventing a trophy for a boss that never existed.
     if (s.boss && raw.version === 2 && hp.every((v) => v === 0)) s.boss.hp = 0;
-    s.levelComplete = hp.every((v) => v === 0) && (!s.boss || s.boss.hp === 0);
+    s.levelComplete = routesComplete(s) && (!s.boss || s.boss.hp === 0);
   }
   s.rescueUsed = raw.rescueUsed === true;
   s.attemptNumber = integer(raw.attemptNumber, 1, 1, 1e6);
   if (
-    raw.version === 4 && raw.entry?.level === s.level &&
+    raw.version >= 4 && raw.entry?.level === s.level &&
     Array.isArray(raw.entry.inventory) &&
     raw.entry.inventory.length === BALANCE.capacity
   ) {
@@ -330,6 +372,8 @@ export function restoreState(raw) {
       gems: integer(raw.entry.gems, s.gems, 0, 1e6),
       power: integer(raw.entry.power, s.power, 0, BALANCE.maxPower),
       runs: integer(raw.entry.runs, s.runs, 0, 1e6),
+      bombs: integer(raw.entry.bombs, s.bombs, 0, 10000),
+      bonusTools: Array.isArray(raw.entry.bonusTools) ? raw.entry.bonusTools.filter((tier) => Number.isInteger(tier) && tier >= 1 && tier <= BALANCE.maxTier).slice(0, 1000) : [],
       inventory: raw.entry.inventory.map((v) =>
         Number.isInteger(v) && v >= 1 && v <= BALANCE.maxTier ? v : null,
       ),
@@ -376,12 +420,14 @@ export function openBoard(s) {
     earned: previous?.earned || 0,
     spent: previous?.spent || 0,
     throws: previous?.throws || 0,
+    claimed: previous?.claimed || [],
+    legacyGoal: previous?.legacyGoal || false,
   };
   if (LEVELS[s.level - 1].boss && s.boss?.level !== s.level)
     s.boss = createBoss(s.level);
   if (!LEVELS[s.level - 1].boss) s.boss = null;
   s.levelComplete =
-    blocks.every((b) => !b.alive) && (!s.boss || s.boss.hp === 0);
+    routesComplete(s) && (!s.boss || s.boss.hp === 0);
   return blocks;
 }
 export function forgeTool(s) {
@@ -461,6 +507,8 @@ function snapshotEntry(s) {
     power: s.power,
     runs: s.runs,
     inventory: [...s.inventory],
+    bombs: s.bombs || 0,
+    bonusTools: [...(s.bonusTools || [])],
   };
 }
 export function isStranded(s, active = 0) {
@@ -468,6 +516,8 @@ export function isStranded(s, active = 0) {
     !s.levelComplete &&
     active === 0 &&
     !s.inventory.some(Boolean) &&
+    !s.bonusTools.length &&
+    (s.bombs === 0 || !bossActive(s) && routeProgress(s).every((route) => route.open || route.claimed)) &&
     s.coins < buyCost(s) &&
     s.gems < forgeCost(s)
   );
@@ -493,7 +543,9 @@ export function restartMine(s) {
     power: entry.power,
     runs: entry.runs,
     inventory: [...entry.inventory],
-    entry: { ...entry, inventory: [...entry.inventory] },
+    bombs: entry.bombs,
+    bonusTools: [...entry.bonusTools],
+    entry: { ...entry, inventory: [...entry.inventory], bonusTools: [...entry.bonusTools] },
     board: null,
     boss: null,
     levelComplete: false,
@@ -522,10 +574,22 @@ export function launch(s, index, active = 0) {
   if (s.board) s.board.throws++;
   return tier;
 }
+export function launchBomb(s, active = 0) {
+  if (s.levelComplete || s.bombs < 1 || active >= BALANCE.maxActive) return false;
+  s.bombs--;
+  if (s.board) s.board.throws++;
+  return true;
+}
+export function collectRoute(s, col) {
+  const route = routeProgress(s).find((route) => route.col === col);
+  if (s.levelComplete || !route?.open || route.claimed) return null;
+  s.board.claimed.push(col);
+  return { col, prize: route.prize, ...completeLevel(s), bossRevealed: bossActive(s) };
+}
 function completeLevel(s) {
   if (
     s.levelComplete ||
-    !s.board.hp.every((hp) => hp === 0) ||
+    !routesComplete(s) ||
     (s.boss && s.boss.hp > 0)
   )
     return { completed: false, trophy: null };
@@ -546,6 +610,16 @@ function completeLevel(s) {
   return { completed: true, trophy };
 }
 export function hitBlock(s, blocks, id, amount, tier = 1) {
+  return applyHits(s, blocks, [[id, amount]], tier);
+}
+export function detonateBomb(s, blocks, id) {
+  const center = blocks[id];
+  if (!center?.alive) return applyHits(s, blocks, [], BALANCE.maxTier);
+  const hits = blocks.filter((b) => b.alive && Math.abs(b.col - center.col) <= 1 && Math.abs(b.row - center.row) <= 1)
+    .map((b) => [b.id, b.id === id ? b.maxHp : Math.ceil(b.maxHp * .85)]);
+  return applyHits(s, blocks, hits, BALANCE.maxTier);
+}
+function applyHits(s, blocks, hits, tier) {
   const empty = {
     destroyed: [],
     completed: false,
@@ -557,6 +631,7 @@ export function hitBlock(s, blocks, id, amount, tier = 1) {
     bossRevealed: false,
     blocked: false,
   };
+  const [id, amount] = hits[0] || [];
   if (
     s.levelComplete ||
     !blocks[id]?.alive ||
@@ -568,7 +643,7 @@ export function hitBlock(s, blocks, id, amount, tier = 1) {
   const coinsBefore = s.coins,
     gemsBefore = s.gems,
     destroyed = [],
-    queue = [[id, amount]];
+    queue = [...hits];
   for (let q = 0; q < queue.length; q++) {
     const [index, hit] = queue[q],
       b = blocks[index];
@@ -637,6 +712,15 @@ export function hitBoss(s, amount, tier = 1) {
 }
 export function nextLevel(s) {
   if (!s.levelComplete) return false;
+  const prizes = pendingPrizes(s);
+  for (const prize of prizes) {
+    if (prize.kind === "bomb") s.bombs++;
+    else {
+      const index = s.inventory.indexOf(null);
+      if (index >= 0) s.inventory[index] = prize.tier;
+      else s.bonusTools.push(prize.tier);
+    }
+  }
   if (s.level === CAMPAIGN_LENGTH) {
     s.campaignWins++;
     s.level = 1;

@@ -147,8 +147,9 @@
               <div id="levelOverlay" class="level-overlay hidden">
                 <span class="completion-icon">✦</span>
                 <p class="eyebrow">ЕЩЁ ОДНО ОТКРЫТИЕ</p>
-                <h2 id="winTitle">Шахта зачищена!</h2>
+                <h2 id="winTitle">Проход пройден!</h2>
                 <p id="winText"></p>
+                <p id="winPrizes" class="win-prizes"></p>
                 <button id="nextLevel" class="button primary">
                   В следующую шахту →
                 </button>
@@ -156,10 +157,13 @@
             </div>
             <div class="mine-bottom">
               <div class="attempt-caption"><span>ПОПЫТКА <b id="attemptNumber">1</b></span><span>Плотная порода: кирка <b id="tierNeed">1</b>+</span></div>
+              <p id="objectiveText" class="objective-text">Пробей проход и подбери тайник киркой внизу.</p>
+              <div id="routeTargets" class="route-targets" aria-label="Прицел в проход"></div>
               <div class="progress-caption">
-                <span>ИССЛЕДОВАНО</span><b id="remaining">0 / 70 блоков</b>
+                <span>ПРОХОДЫ И ТАЙНИКИ</span><b id="remaining">0 / 1 тайников</b>
               </div>
               <div class="progress"><div id="progressFill"></div></div>
+              <p id="prizePreview" class="prize-preview"></p>
               <div class="mine-budget">
                 <span>Находки <b id="mineEarned">0</b> ◆</span
                 ><span>Снабжение <b id="mineSpent">0</b> ◆</span>
@@ -239,6 +243,11 @@
                     <b id="upgradeCost">3</b></span
                   >
                 </button>
+              </div>
+              <div id="supplies" class="supplies hidden">
+                <p>СНАРЯЖЕНИЕ ИЗ ПРОШЛЫХ ШАХТ</p>
+                <button id="throwBomb" class="button bomb-button" type="button"><span>◉ Бросить бомбу</span><span>×<b id="bombCount">0</b></span></button>
+                <button id="claimBonusTool" class="button secondary hidden" type="button">Взять бонусную кирку</button>
               </div>
               <button id="rewardAd" class="reward-button hidden">
                 ▷ Смотреть рекламу · +80 монет
@@ -340,7 +349,8 @@
         </li>
         <li>
           <b>Брось.</b> Выбери инструмент и нажми на шахту. Одновременно
-          добывают до пяти инструментов.
+          добывают до пяти инструментов. Пробей отмеченный вертикальный проход
+          и коснись киркой тайника внизу. Остальные блоки разрушать необязательно.
         </li>
         <li>
           <b>Усиль.</b> Плотная порода требует кирку указанного уровня.
@@ -348,7 +358,9 @@
         </li>
         <li>
           <b>Подготовься.</b> Каждая восьмая шахта — испытание. Перед боссом —
-          золотая передышка. Каждый пятнадцатый хранитель оставляет трофей с
+          золотая передышка. На сложных шахтах нужно пройти 2–3 прохода.
+          Подобранные кирки и бомбы станут снаряжением следующей шахты.
+          Каждый пятнадцатый хранитель оставляет трофей с
           постоянным бонусом.
         </li>
       </ol>
@@ -369,7 +381,7 @@
       <p class="eyebrow">130 ШАХТ · ОДНА ИСТОРИЯ</p>
       <h2>Путь к сердцу горы</h2>
       <p class="section-copy">
-        Каждая новая шахта открывается после зачистки предыдущей.
+        Собери тайники в отмеченных проходах, чтобы открыть следующую шахту.
       </p>
       <div id="mineMap" class="mine-map"></div>
     </dialog>

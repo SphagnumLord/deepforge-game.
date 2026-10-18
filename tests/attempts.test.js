@@ -4,7 +4,7 @@ import {
   BALANCE, LEVELS, createState, restoreState, openBoard, generateLevel,
   rescue, canRescue, launch, buyTool, forgeTool, forgeCost, upgrade, upgradeCost,
   needsRestart, restartAttempt, restartMine, recommendedTier, merge, hitBlock, hitBoss,
-  nextLevel, attemptBudget,
+  nextLevel, attemptBudget, routeColumns, collectRoute,
 } from "../src/core.js";
 import { simulateCampaign, simulateMine } from "../scripts/simulate-economy.mjs";
 
@@ -134,6 +134,7 @@ test("even enormous raw damage cannot bypass rock or guardian tier requirements"
   s.board = null;
   openBoard(s);
   s.board.hp.fill(0);
+  for (const col of routeColumns(s.level)) collectRoute(s, col);
   const bossHp = s.boss.hp;
   assert.equal(hitBoss(s, 1e9, 1).blocked, true);
   assert.equal(s.boss.hp, bossHp);
@@ -210,7 +211,7 @@ test("v3 progress migrates without losing wallet, upgrades, trophies or damaged 
   s.version = 3;
   delete s.entry;
   const migrated = restoreState(s);
-  assert.equal(migrated.version, 4);
+  assert.equal(migrated.version, 5);
   assert.equal(migrated.coins, 321);
   assert.equal(migrated.gems, 17);
   assert.equal(migrated.power, 7);
@@ -219,7 +220,7 @@ test("v3 progress migrates without losing wallet, upgrades, trophies or damaged 
 });
 
 test("poor efficiency causes a real defeat; replaying with better tools and aim remains viable", () => {
-  const poor = simulateCampaign(0.5);
+  const poor = simulateCampaign(0.4);
   assert.ok(poor.length < 130);
   assert.equal(poor.at(-1).completed, false);
   assert.equal(poor.at(-1).challenge, true);
@@ -227,7 +228,7 @@ test("poor efficiency causes a real defeat; replaying with better tools and aim 
   assert.ok(withoutMerges.length < 130);
   let state = createState(), recovered = 0;
   for (let level = 1; level <= 130; level++) {
-    if (!simulateMine(state, 0.5).completed) {
+    if (!simulateMine(state, 0.4).completed) {
       assert.equal(restartAttempt(state), true);
       const checkpoint = JSON.stringify(state);
       let won = false;

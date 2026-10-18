@@ -33,8 +33,10 @@ import {
   isHardMine,
   restartAttempt,
   restartMine,
+  routeColumns, routeProgress, collectRoute, pendingPrizes, prizeLabel,
+  claimBonusTool, launchBomb, detonateBomb,
 } from "./src/core.js";
-import { MinePhysics, blockRect, FIELD } from "./src/physics.js";
+import { MinePhysics, blockRect, FIELD, prizePosition } from "./src/physics.js";
 import { MineRenderer } from "./src/renderer.js";
 import { toolMarkup, trophyMarkup } from "./src/art.js";
 import { GameAudio } from "./src/audio.js";
@@ -65,6 +67,7 @@ let state = loadState(storage),
   lastTime = 0,
   accumulator = 0,
   booting = true;
+let aimCol = 3, prizeUntil = 0;
 const audio = new GameAudio(state.muted, state.musicMuted);
 const platform = new YandexPlatform({
   onPause: (reason) => pause(reason, true),
@@ -144,9 +147,35 @@ function refresh() {
   $("rewardAd").classList.toggle("hidden", !platform.canReward);
   $("rewardAd").disabled = locked || platform.adActive;
   $("activeTools").textContent = `${active} / ${BALANCE.maxActive}`;
+  $("supplies").classList.toggle("hidden", !state.bombs && !state.bonusTools.length);
+  $("throwBomb").disabled = locked || active >= BALANCE.maxActive || !state.bombs;
+  $("bombCount").textContent = state.bombs;
+  $("claimBonusTool").classList.toggle("hidden", !state.bonusTools.length);
+  $("claimBonusTool").disabled = locked || !state.inventory.includes(null);
+  $("claimBonusTool").textContent = `Взять кирку ур. ${state.bonusTools[0] || 1} · запас ${state.bonusTools.length}`;
   canvas.dataset.active = active;
   const destroyed = blocks.filter((b) => !b.alive).length;
-  $("remaining").textContent = `${destroyed} / ${blocks.length} блоков`;
+  const routes = routeProgress(state), claimed = routes.filter((route) => route.claimed).length;
+  $("remaining").textContent = `${claimed} / ${routes.length} тайников`;
+  canvas.dataset.claimed = claimed;
+  canvas.dataset.routes = routes.length;
+  canvas.dataset.bombs = state.bombs;
+  canvas.dataset.prizeGlow = Number(renderer.time < prizeUntil);
+  $("objectiveText").textContent = routes.length === 1
+    ? "Пробей отмеченный проход и подбери тайник киркой внизу."
+    : `Пройди ${routes.length} отмеченных прохода и подбери тайник в конце каждого.`;
+  for (const route of routes) {
+    const button = $("routeTargets").querySelector(`[data-col="${route.col}"]`);
+    if (button) {
+      button.textContent = `${["I", "II", "III"][route.index]} · ${route.claimed ? "✓" : route.open ? "тайник открыт" : `${route.cleared}/10`}`;
+      button.disabled = locked || route.claimed && !bossActive(state);
+      button.setAttribute("aria-pressed", String(route.col === aimCol));
+    }
+  }
+  const prizes = pendingPrizes(state);
+  $("prizePreview").textContent = prizes.length
+    ? `В следующую шахту: ${prizes.map(prizeLabel).join(" + ")}.`
+    : `Награда внизу: ${routes.map((route) => prizeLabel(route.prize)).join(" + ")}.`;
   canvas.dataset.destroyed = destroyed;
   canvas.dataset.kind = LEVELS[state.level - 1].kind;
   canvas.dataset.boss = bossActive(state)
@@ -161,10 +190,10 @@ function refresh() {
   const toCheckpoint =
     Math.min(70, ((state.board?.checkpoints || 0) + 1) * 10) - destroyed;
   $("nextMilestone").textContent =
-    destroyed === 70
+    claimed === routes.length
       ? bossActive(state)
         ? "Путь свободен. Добейся победы над хранителем!"
-        : "Все находки собраны."
+        : "Все тайники подобраны. Можно идти дальше."
       : `Ещё ${toCheckpoint} блоков — премия ${Math.round(6 * LEVELS[state.level - 1].incomeScale)} монет.`;
   $("bossStatus").classList.toggle("hidden", !state.boss);
   if (state.boss) {
@@ -180,13 +209,13 @@ function refresh() {
       state.boss.hp === 0
         ? "Хранитель побеждён. Трофей сохранён."
         : !bossActive(state)
-          ? "Очисти породу, чтобы разбудить хранителя."
+          ? "Подбери тайники в проходах, чтобы разбудить хранителя."
           : bossVulnerable(state)
             ? "Слабое место открыто! Следующий удар ×1,65."
             : `Броня поглощает часть урона. До слабого места: ${3 - (state.boss.hits % 4)} удара.`;
   }
   $("progressFill").style.width =
-    `${blocks.length ? (destroyed / blocks.length) * 100 : 0}%`;
+    `${routes.reduce((sum, route) => sum + (route.claimed ? 11 : route.cleared), 0) / (routes.length * 11) * 100}%`;
   for (const [i, slot] of [...$("inventory").children].entries()) {
     const tier = state.inventory[i];
     if (slot.dataset.tier !== String(tier)) {
@@ -226,7 +255,7 @@ function refresh() {
   $("selectedInfo").textContent = tier
     ? `Уровень ${tier} · урон ${toolStats(state, tier).damage} · ${toolStats(state, tier).hits} ударов`
     : "И брось его в шахту";
-  $("levelOverlay").classList.toggle("hidden", !state.levelComplete);
+  $("levelOverlay").classList.toggle("hidden", !state.levelComplete || renderer.time < prizeUntil);
   if (state.levelComplete) {
     $("winTitle").textContent =
       state.level === CAMPAIGN_LENGTH
@@ -235,7 +264,7 @@ function refresh() {
           ? "Хранитель побеждён!"
           : LEVELS[state.level - 1].treasure
             ? "Золотая жила собрана!"
-            : "Шахта зачищена!";
+            : "Проход пройден!";
     $("winText").textContent =
       state.level === CAMPAIGN_LENGTH
         ? `Все ${CAMPAIGN_LENGTH} шахт пройдены. Начни новый поход с накоплениями и трофеями.`
@@ -244,6 +273,7 @@ function refresh() {
             ? `Трофей «${LEVELS[state.level - 1].trophy.name}» на полке. Постоянно: ${LEVELS[state.level - 1].trophy.description}.`
             : "Эта шахта уже завершена в предыдущей версии. Продолжай экспедицию: новые хранители и трофеи впереди."
           : `Найдено ${number(state.board?.earned || 0)} монет, на кирки потрачено ${number(state.board?.spent || 0)}. Впереди — ${LEVELS[state.level].name.toLowerCase()}.`;
+    $("winPrizes").textContent = prizes.length ? `В следующей шахте: ${prizes.map(prizeLabel).join(" + ")}` : "Снаряжение и трофеи сохранятся.";
     $("nextLevel").textContent =
       state.level === CAMPAIGN_LENGTH
         ? "Ещё один поход →"
@@ -289,8 +319,50 @@ function setupLevel() {
   selected = -1;
   renderer.particles = [];
   renderer.waves = [];
+  renderer.prizeFlares = [];
+  prizeUntil = 0;
   blocks = openBoard(state);
+  aimCol = routeProgress(state).find((route) => !route.claimed)?.col ?? routeColumns(state.level)[0];
+  pointerX = prizePosition(aimCol).x;
+  $("routeTargets").innerHTML = routeColumns(state.level).map((col) => `<button type="button" data-col="${col}"></button>`).join("");
   physics = new MinePhysics(blocks, {
+    goals: routeProgress(state),
+    onCollect: (col, tool) => {
+      const result = collectRoute(state, col);
+      if (!result) return;
+      tool.extracted = true;
+      physics.removeReward(col);
+      const { x, y } = prizePosition(col);
+      renderer.celebrate(x, y, prizeLabel(result.prize));
+      prizeUntil = renderer.time + 75;
+      audio.play("prize");
+      syncBoss();
+      const next = routeProgress(state).find((route) => !route.claimed);
+      if (next) { aimCol = next.col; pointerX = prizePosition(aimCol).x; }
+      if (result.completed) { platform.setPlaying(false); hint("Тайник твой! Награда ждёт в следующей шахте."); }
+      else if (result.bossRevealed) hint(`Тайники собраны. Проснулся ${LEVELS[state.level - 1].trophy.boss}!`);
+      else hint(`Подобрано: ${prizeLabel(result.prize)}. Осталось проходов: ${routeProgress(state).filter((route) => !route.claimed).length}.`);
+      persist(); refresh();
+    },
+    onBombHit: (id, tool, boss) => {
+      if (state.levelComplete) return;
+      const { x, y } = tool.body.position;
+      const result = boss
+        ? hitBoss(state, toolStats(state, recommendedTier(state.level)).damage * 2, recommendedTier(state.level))
+        : detonateBomb(state, blocks, id);
+      for (const block of result.destroyed || []) {
+        physics.removeBlock(block.id);
+        const rect = blockRect(block);
+        renderer.burst(rect.x + 27, rect.y + 18, "#e9c58e", 10);
+      }
+      renderer.blast(x, y); renderer.burst(x, y, "#f0cc87", 28);
+      audio.play("explosion");
+      canvas.dataset.explosions = Number(canvas.dataset.explosions || 0) + 1;
+      syncBoss();
+      if (result.completed) { platform.setPlaying(false); hint("Хранитель побеждён! Тайники отправятся в следующую шахту."); }
+      else hint("Бомба расчистила породу. Тайник подбирается киркой.");
+      persist(); refresh();
+    },
     onHit: (id, power, tool) => {
       if (state.levelComplete) return;
       const result = hitBlock(state, blocks, id, power, tool.tier),
@@ -375,9 +447,10 @@ function setupLevel() {
       refresh();
     },
     onRetire: (retired) => {
-      audio.play("toolBreak");
-      canvas.dataset.brokenTools = Number(canvas.dataset.brokenTools || 0) + retired.length;
-      for (const tool of retired)
+      const broken = retired.filter((tool) => tool.kind !== "bomb" && !tool.extracted);
+      if (broken.length) audio.play("toolBreak");
+      canvas.dataset.brokenTools = Number(canvas.dataset.brokenTools || 0) + broken.length;
+      for (const tool of broken)
         renderer.burst(tool.body.position.x, tool.body.position.y, "#b49b72", 6);
       refresh();
       if (canRescue(state, physics.tools.length))
@@ -422,11 +495,11 @@ function setupLevel() {
         : "Готовься к следующей глубине";
   const nextBoss = TROPHIES.find((t) => t.level > state.level);
   $("journalText").textContent = level.boss
-    ? `${level.trophy.boss} скрывается под породой. Три удара раскалывают броню, четвёртый бьёт в слабое место. Награда: ${level.trophy.description}.`
+    ? `${level.trophy.boss} проснётся после тайников в проходах. Три удара раскалывают броню, четвёртый бьёт в слабое место. Награда: ${level.trophy.description}.`
     : level.treasure
       ? `${level.challenge ? "Испытание остаётся сложным, но " : ""}Много золотых жил. Пополни кошелёк перед хранителем и собери запас усиленных кирок.`
       : level.challenge
-        ? "Твёрдая броня и ни одной аварийной кирки. Готовь усиленные инструменты заранее. За зачистку — дополнительный алмаз."
+        ? "Несколько проходов, твёрдая броня и ни одной аварийной кирки. Готовь усиленные инструменты заранее. За победу — дополнительный алмаз."
         : nextBoss
           ? `Хранитель на ${nextBoss.level}-м горизонте. Перед ним будет богатая шахта, а после победы — «${nextBoss.name}»: ${nextBoss.description}.`
           : "Все хранители позади. Впереди сердце горы — и последние открытия экспедиции.";
@@ -643,15 +716,38 @@ canvas.addEventListener("pointerdown", (event) => {
 canvas.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    shoot(210);
+    shoot(prizePosition(aimCol).x);
   }
 });
 $("dropSelected").onclick = () => {
-  shoot(210);
+  shoot(prizePosition(aimCol).x);
   canvas.scrollIntoView({
     behavior: renderer.reducedMotion ? "instant" : "smooth",
     block: "center",
   });
+};
+$("routeTargets").onclick = (event) => {
+  const target = event.target.closest("button[data-col]");
+  if (!target || isPaused() || state.levelComplete) return;
+  aimCol = Number(target.dataset.col);
+  pointerX = prizePosition(aimCol).x;
+  hint("Прицел выбран. Брось кирку в этот проход или нажми на нужное место в шахте.");
+  refresh();
+};
+$("throwBomb").onclick = () => {
+  if (isPaused() || !launchBomb(state, physics.tools.length)) return;
+  audio.unlock();
+  physics.addBomb(prizePosition(aimCol).x);
+  hint("Бомба летит в выбранный проход. Тайник забирается киркой.");
+  persist(); refresh();
+};
+$("claimBonusTool").onclick = () => {
+  if (isPaused()) return;
+  const index = claimBonusTool(state);
+  if (index < 0) return;
+  selected = index;
+  audio.unlock(); audio.play("gem");
+  persist(); refresh();
 };
 $("buy").onclick = () => {
   if (isPaused()) return;
@@ -813,6 +909,8 @@ function frame(time) {
     }
   else accumulator = 0;
   renderer.draw(state, blocks, physics, selected, pointerX);
+  canvas.dataset.prizeGlow = Number(renderer.time < prizeUntil);
+  if (state.levelComplete && renderer.time >= prizeUntil && $("levelOverlay").classList.contains("hidden")) refresh();
   requestAnimationFrame(frame);
 }
 async function boot() {
@@ -820,7 +918,7 @@ async function boot() {
   await platform.init();
   const cloud = await platform.load();
   if (
-    [2, 3, 4].includes(cloud?.version) &&
+    [2, 3, 4, 5].includes(cloud?.version) &&
     Array.isArray(cloud.inventory) &&
     cloud.inventory.length === BALANCE.capacity &&
     Number.isSafeInteger(cloud.updatedAt) &&

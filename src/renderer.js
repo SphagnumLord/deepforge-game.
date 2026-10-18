@@ -1,6 +1,6 @@
-import { LEVELS, MATERIALS, TROPHIES, bossActive } from "./core.js";
-import { FIELD, blockRect } from "./physics.js";
-import { drawTool, loadToolArt, drawTrophy, drawBoss } from "./art.js";
+import { LEVELS, MATERIALS, TROPHIES, bossActive, routeProgress } from "./core.js";
+import { FIELD, blockRect, prizePosition } from "./physics.js";
+import { drawTool, loadToolArt, drawTrophy, drawBoss, drawBomb } from "./art.js";
 import { createRockTextures, createLampMist } from "./geology.js";
 import { createCampScene, createCampMistMask, drawCampfire } from "./camp.js";
 
@@ -10,6 +10,7 @@ export class MineRenderer {
     this.ctx = canvas.getContext("2d");
     this.particles = [];
     this.waves = [];
+    this.prizeFlares = [];
     this.time = 0;
     this.ready = loadToolArt();
     this.rocks = createRockTextures();
@@ -53,6 +54,7 @@ export class MineRenderer {
   }
   update() {
     this.time++;
+    this.prizeFlares = this.prizeFlares.filter((flare) => --flare.life > 0);
     this.waves = this.waves.filter((wave) => --wave.life > 0);
     for (const p of this.particles) {
       p.x += p.vx;
@@ -64,6 +66,44 @@ export class MineRenderer {
   }
   blast(x, y) {
     if (!this.reducedMotion) this.waves.push({ x, y, life: 24 });
+  }
+  celebrate(x, y, label) {
+    this.prizeFlares.push({ x, y, label, life: 90 });
+    this.burst(x, y - 8, "#f4d891", 32);
+    this.burst(x, y - 8, "#b8e9cb", 18);
+  }
+  drawRoutes(c, state) {
+    for (const route of routeProgress(state)) {
+      const { x, y } = prizePosition(route.col);
+      c.save();
+      c.strokeStyle = route.claimed ? "#afd5b3" : "#dfc68c99";
+      c.lineWidth = 1.2;
+      c.setLineDash(route.open ? [] : [4, 5]);
+      c.strokeRect(x - 26, FIELD.top, 52, 360);
+      c.setLineDash([]);
+      c.fillStyle = "#1a2b2ce8"; c.beginPath(); c.roundRect(x - 11, 130, 22, 14, 4); c.fill();
+      c.fillStyle = route.claimed ? "#c5eac4" : "#f0d6a2";
+      c.font = '600 8px "Segoe UI",sans-serif'; c.textAlign = "center";
+      c.fillText(["I", "II", "III"][route.index], x, 140);
+      if (route.claimed) {
+        c.strokeStyle = "#bfe4ad"; c.lineWidth = 2;
+        c.beginPath(); c.moveTo(x - 5, y); c.lineTo(x - 1, y + 4); c.lineTo(x + 7, y - 5); c.stroke();
+      } else {
+        const pulse = this.reducedMotion ? 1 : .87 + Math.sin(this.time / 24 + route.index) * .13;
+        if (route.open) {
+          const glow = c.createRadialGradient(x, y, 2, x, y, 26);
+          glow.addColorStop(0, "#f6d18a77"); glow.addColorStop(1, "#f6d18a00");
+          c.globalAlpha = pulse; c.fillStyle = glow; c.fillRect(x - 27, y - 27, 54, 54);
+        }
+        c.globalAlpha = route.open ? 1 : .54;
+        c.fillStyle = "#243b36"; c.strokeStyle = route.open ? "#f2d695" : "#7c8a77";
+        c.lineWidth = route.open ? 1.5 : 1;
+        c.beginPath(); c.roundRect(x - 16, y - 16, 32, 31, 7); c.fill(); c.stroke();
+        if (route.prize.kind === "tool") drawTool(c, route.prize.tier, x, y - 1, 0, .48);
+        else drawBomb(c, x, y, 0, .8);
+      }
+      c.restore();
+    }
   }
   drawMist(target) {
     const c = this.mistLayer.getContext("2d");
@@ -131,15 +171,15 @@ export class MineRenderer {
       c.strokeStyle = "#d3be7788";
       c.lineWidth = 1;
       c.beginPath();
-      c.moveTo(x, 118);
-      c.lineTo(x, 136);
+      c.moveTo(x, 117);
+      c.lineTo(x, 126);
       c.stroke();
       c.setLineDash([]);
       c.fillStyle = "#ecd196";
       c.beginPath();
-      c.moveTo(x - 4, 131);
-      c.lineTo(x, 137);
-      c.lineTo(x + 4, 131);
+      c.moveTo(x - 4, 123);
+      c.lineTo(x, 129);
+      c.lineTo(x + 4, 123);
       c.fill();
     }
     for (const b of blocks) {
@@ -239,15 +279,12 @@ export class MineRenderer {
         c.fillRect(x + 8, y + 30, (36 * b.hp) / b.maxHp, 2);
       }
     }
-    for (const tool of physics?.tools || [])
-      drawTool(
-        c,
-        tool.tier,
-        tool.body.position.x,
-        tool.body.position.y,
-        tool.body.angle,
-        1.06,
-      );
+    this.drawRoutes(c, state);
+    for (const tool of physics?.tools || []) {
+      const { x, y } = tool.body.position;
+      if (tool.kind === "bomb") drawBomb(c, x, y, tool.body.angle, 1.1);
+      else drawTool(c, tool.tier, x, y, tool.body.angle, 1.06);
+    }
     if (bossActive(state))
       drawBoss(c, theme, state.boss, physics?.boss?.body, this.time);
     for (const wave of this.waves) {
@@ -263,12 +300,32 @@ export class MineRenderer {
       c.fillRect(p.x, p.y, p.size, p.size);
     }
     c.globalAlpha = 1;
+    for (const flare of this.prizeFlares) {
+      c.save();
+      const age = 90 - flare.life, strength = Math.min(1, flare.life / 32);
+      const radius = this.reducedMotion ? 56 : 34 + age * .7;
+      const glow = c.createRadialGradient(flare.x, flare.y, 2, flare.x, flare.y, radius);
+      glow.addColorStop(0, "#fff2b0bb"); glow.addColorStop(.35, "#edc77d66"); glow.addColorStop(1, "#edc77d00");
+      c.globalAlpha = strength; c.fillStyle = glow;
+      c.fillRect(flare.x - radius, flare.y - radius, radius * 2, radius * 2);
+      c.strokeStyle = "#fce4a6"; c.lineWidth = 1.5;
+      for (let n = 0; n < 8; n++) {
+        const angle = n / 8 * Math.PI * 2 + (this.reducedMotion ? 0 : age / 160);
+        c.beginPath();
+        c.moveTo(flare.x + Math.cos(angle) * radius * .35, flare.y + Math.sin(angle) * radius * .35);
+        c.lineTo(flare.x + Math.cos(angle) * radius * .7, flare.y + Math.sin(angle) * radius * .7); c.stroke();
+      }
+      c.font = '600 9px "Segoe UI", sans-serif'; c.textAlign = "center";
+      c.fillStyle = "#fff0bf"; c.shadowColor = "#162a2d"; c.shadowBlur = 5;
+      c.fillText(`✦ ${flare.label} — в следующую шахту`, flare.x, flare.y - 39 - (this.reducedMotion ? 0 : age * .12));
+      c.restore();
+    }
     c.fillStyle = "#92a394";
     c.font = '7px "Segoe UI",sans-serif';
     c.textAlign = "left";
-    c.fillText(`DEEPFORGE  /  ${theme.biome.toUpperCase()}`, 23, 539);
+    c.fillText(`DEEPFORGE  /  ${theme.biome.toUpperCase()}`, 23, 555);
     c.fillStyle = theme.color;
     c.textAlign = "right";
-    c.fillText(`${state.level * 100} М`, 396, 539);
+    c.fillText(`${state.level * 100} М`, 396, 555);
   }
 }

@@ -2,6 +2,7 @@ import {
   createState, LEVELS, openBoard, buyTool, forgeTool, upgrade, upgradeCost,
   rescue, launch, toolStats, hitBlock, hitBoss, bossActive, nextLevel,
   recommendedTier, merge,
+  routeProgress, collectRoute, claimBonusTool, launchBomb, detonateBomb,
 } from "../src/core.js";
 
 function prepareTool(state, target, allowMerge) {
@@ -33,8 +34,16 @@ export function simulateMine(state, efficiency = 0.65, { mergeTools = true, tier
   const blocks = openBoard(state), level = LEVELS[state.level - 1];
   const opening = state.coins;
   let throws = 0, rescues = 0, merges = 0;
+  let bombUses = 0;
   while (!state.levelComplete && throws < 500) {
+    while (claimBonusTool(state) >= 0) { /* Equip carried picks when slots are free. */ }
     while (state.gems >= upgradeCost(state) && state.power < 60) upgrade(state);
+    const route = routeProgress(state).find((route) => !route.claimed);
+    const front = route && blocks.find((block) => block.alive && block.col === route.col);
+    if (!bossActive(state) && front && state.bombs && bombUses < LEVELS[state.level - 1].routes) {
+      launchBomb(state); detonateBomb(state, blocks, front.id); throws++; bombUses++;
+      continue;
+    }
     const before = state.inventory.filter(Boolean).length, runs = state.runs;
     let index = prepareTool(state, Math.min(12, recommendedTier(state.level) + tierBoost), mergeTools);
     merges += Math.max(0, before + state.runs - runs - state.inventory.filter(Boolean).length);
@@ -48,10 +57,11 @@ export function simulateMine(state, efficiency = 0.65, { mergeTools = true, tier
     for (let hit = 0; hit < Math.max(1, Math.floor(stats.hits * efficiency)) && !state.levelComplete; hit++) {
       if (bossActive(state)) hitBoss(state, stats.damage, tier);
       else {
-        const front = blocks.find((b) => b.alive)?.row ?? 10;
-        const target = blocks.find((b) => b.alive && b.minTier <= tier && b.type === "bomb" && b.row <= front + 1)
-          || blocks.find((b) => b.alive && b.minTier <= tier);
-        if (!target) break;
+        const route = routeProgress(state).find((route) => !route.claimed);
+        if (!route) break;
+        if (route.open) { collectRoute(state, route.col); continue; }
+        const target = blocks.find((b) => b.alive && b.col === route.col);
+        if (!target || target.minTier > tier) break;
         hitBlock(state, blocks, target.id, stats.damage, tier);
       }
     }
@@ -76,7 +86,7 @@ export function simulateCampaign(efficiency = 0.65, options = {}) {
 }
 
 if (process.argv[1]?.endsWith("simulate-economy.mjs")) {
-  for (const efficiency of [0.5, 0.65, 0.8]) {
+  for (const efficiency of [0.4, 0.65, 0.8]) {
     const report = simulateCampaign(efficiency);
     console.table(report.filter((r) => [1, 7, 8, 14, 15, 104, 120, 128, 130].includes(r.level) || !r.completed));
     console.log(JSON.stringify({

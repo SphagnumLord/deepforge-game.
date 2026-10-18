@@ -20,6 +20,7 @@ import {
   launch,
   hitBlock,
   nextLevel,
+  routeColumns, collectRoute,
   LEVELS,
   BALANCE,
   STORAGE,
@@ -143,7 +144,8 @@ test("bomb chains pay each block once and clear bonus is awarded once", () => {
   }
   const result = hitBlock(s, blocks, 3, 1);
   assert.equal(result.destroyed.length, 70);
-  assert.equal(result.completed, true);
+  assert.equal(result.completed, false);
+  assert.equal(collectRoute(s, routeColumns(s.level)[0]).completed, true);
   const coins = s.coins;
   assert.equal(hitBlock(s, blocks, 3, 999).coins, 0);
   assert.equal(s.coins, coins);

@@ -17,21 +17,26 @@ export function blockRect(b) {
     h: FIELD.rowHeight,
   };
 }
+export const prizePosition = (col) => ({ x: FIELD.left + col * FIELD.cell + FIELD.cell / 2, y: 530 });
 
 export class MinePhysics {
   constructor(
     blocks,
-    { onHit = () => {}, onBossHit = () => {}, onRetire = () => {} } = {},
+    { onHit = () => {}, onBossHit = () => {}, onRetire = () => {},
+      onCollect = () => {}, onBombHit = () => {}, goals = [] } = {},
   ) {
     this.engine = Engine.create({ gravity: { x: 0, y: 1.05 } });
     this.blocks = new Map();
     this.tools = [];
     this.pending = new Map();
+    this.rewards = new Map();
     this.time = 0;
     this.onHit = onHit;
     this.onBossHit = onBossHit;
     this.boss = null;
     this.onRetire = onRetire;
+    this.onCollect = onCollect;
+    this.onBombHit = onBombHit;
     Composite.add(this.engine.world, [
       Bodies.rectangle(-9, 250, 24, 800, { isStatic: true, restitution: 0.85 }),
       Bodies.rectangle(429, 250, 24, 800, {
@@ -61,6 +66,13 @@ export class MinePhysics {
       this.blocks.set(b.id, body);
       Composite.add(this.engine.world, body);
     }
+    for (const goal of goals.filter((goal) => !goal.claimed)) {
+      const { x, y } = prizePosition(goal.col);
+      const body = Bodies.rectangle(x, y, 40, 26, { isStatic: true, isSensor: true });
+      body.plugin.reward = goal.col;
+      this.rewards.set(goal.col, body);
+      Composite.add(this.engine.world, body);
+    }
     const collisions = (event) => {
       for (const { bodyA, bodyB } of event.pairs) {
         const body = bodyA.plugin.tool
@@ -69,9 +81,9 @@ export class MinePhysics {
             ? bodyB
             : null;
         const brick =
-          bodyA.plugin.block !== undefined || bodyA.plugin.boss
+          bodyA.plugin.block !== undefined || bodyA.plugin.boss || bodyA.plugin.reward !== undefined
             ? bodyA
-            : bodyB.plugin.block !== undefined || bodyB.plugin.boss
+            : bodyB.plugin.block !== undefined || bodyB.plugin.boss || bodyB.plugin.reward !== undefined
               ? bodyB
               : null;
         if (!body || !brick) continue;
@@ -97,6 +109,7 @@ export class MinePhysics {
       },
     );
     const tool = {
+      kind: "pick",
       tier,
       body,
       power: stats.damage ?? damage(tier, power),
@@ -106,11 +119,21 @@ export class MinePhysics {
       lastHit: new Map(),
     };
     body.plugin.tool = tool;
-    Body.setVelocity(body, { x: ((x % 11) - 5) * 0.12, y: 0.5 });
+    Body.setVelocity(body, { x: 0, y: 0.5 });
     Body.setAngularVelocity(body, 0.08);
     this.tools.push(tool);
     Composite.add(this.engine.world, body);
     return true;
+  }
+  addBomb(x) {
+    if (!this.add(1, x, 0, { damage: 0, hits: 1 })) return false;
+    this.tools.at(-1).kind = "bomb";
+    return true;
+  }
+  removeReward(col) {
+    const body = this.rewards.get(col);
+    if (body) Composite.remove(this.engine.world, body);
+    this.rewards.delete(col);
   }
   removeBlock(id) {
     const body = this.blocks.get(id);
@@ -149,6 +172,11 @@ export class MinePhysics {
       });
     Engine.update(this.engine, dt);
     for (const { tool, brick } of this.pending.values()) {
+      if (tool.spent || tool.extracted) continue;
+      if (brick.plugin.reward !== undefined) {
+        if (tool.kind === "pick" && this.rewards.has(brick.plugin.reward)) this.onCollect(brick.plugin.reward, tool);
+        continue;
+      }
       if (
         (brick.plugin.boss
           ? this.boss?.body !== brick
@@ -158,6 +186,11 @@ export class MinePhysics {
         continue;
       tool.lastHit.set(brick.id, this.time);
       tool.hits++;
+      if (tool.kind === "bomb") {
+        tool.spent = true;
+        this.onBombHit(brick.plugin.block, tool, !!brick.plugin.boss);
+        continue;
+      }
       if (brick.plugin.boss) this.onBossHit(tool.power, tool);
       else this.onHit(brick.plugin.block, tool.power, tool);
       // Restore a small separating bounce when a rotating tool comes to rest on a ledge.
@@ -167,7 +200,7 @@ export class MinePhysics {
     this.pending.clear();
     const retired = this.tools.filter(
       (t) =>
-        t.hits >= t.maxHits ||
+        t.spent || t.extracted || t.hits >= t.maxHits ||
         t.body.position.y > FIELD.height + 60 ||
         this.time - t.born > 18000,
     );
@@ -187,6 +220,7 @@ export class MinePhysics {
     Engine.clear(this.engine);
     this.tools = [];
     this.blocks.clear();
+    this.rewards.clear();
     this.boss = null;
   }
 }

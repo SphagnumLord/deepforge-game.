@@ -4,7 +4,7 @@ import {
   openBoard,
   STORAGE,
   LEGACY_STORAGE,
-  generateLevel,
+  generateLevel, routeColumns,
 } from "../../src/core.js";
 const test = base.extend({
   page: async ({ page }, use) => {
@@ -240,7 +240,7 @@ test("legacy progress migrates and a confirmed restart preserves its wallet and 
   await expect(page.locator("#attemptNumber")).toHaveText("2");
   expect(
     await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).version, STORAGE),
-  ).toBe(4);
+  ).toBe(5);
 });
 
 test("the visible restart refunds this attempt, removes flying tools and keeps the expedition", async ({ page }) => {
@@ -287,12 +287,90 @@ test("the visible restart refunds this attempt, removes flying tools and keeps t
   await expect(page.locator(".trophy-item")).toHaveCount(2);
 });
 
-test("cleared final mine restores without duplicate payout and starts a new campaign", async ({
+test("a physical cache pickup glows, wins with other rock intact and delivers its pick on the next mine", async ({ page, isMobile }) => {
+  const save = { ...createState(), coins: 500, inventory: [4, ...Array(11).fill(null)] };
+  openBoard(save);
+  for (let row = 0; row < 10; row++) save.board.hp[row * 7 + 3] = 0;
+  save.board.hp[66] = 1;
+  await seed(page, { ...save, tutorialDone: true });
+  await page.goto("/");
+  await expect(page.locator("#game")).toHaveAttribute("data-routes", "1");
+  await slot(page, 0).click();
+  if (isMobile) await page.locator("#dropSelected").click();
+  else { const box = await page.locator("#game").boundingBox(); await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } }); }
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "1");
+  await expect(page.locator("#game")).toHaveAttribute("data-prize-glow", "1");
+  const won = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE);
+  expect(won.board.hp.filter((hp) => hp > 0).length).toBeGreaterThan(40);
+  expect(won.inventory.filter(Boolean)).toEqual([]);
+  await expect(page.locator("#winPrizes")).toContainText("Кирка ур. 2");
+  await expect(page.locator("#levelOverlay")).toBeVisible();
+  await page.locator("#nextLevel").click();
+  await expect(page.locator("#level")).toHaveText("02");
+  await expect(page.locator('.slot[data-tier="2"]')).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator('.slot[data-tier="2"]')).toHaveCount(1);
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "0");
+});
+
+test("a trial needs both real pickups, persists the first one and carries both rewards", async ({ page, isMobile }) => {
+  const save = { ...createState(), level: 8, best: 8, coins: 5000, inventory: [4, 4, ...Array(10).fill(null)] };
+  openBoard(save);
+  for (let id = 0; id < 70; id++) if ([2, 4].includes(id % 7)) save.board.hp[id] = 0;
+  await seed(page, { ...save, tutorialDone: true });
+  await page.goto("/");
+  const shootRoute = async (slotIndex, col) => {
+    await slot(page, slotIndex).click();
+    await page.locator(`#routeTargets [data-col="${col}"]`).click();
+    if (isMobile) await page.locator("#dropSelected").click();
+    else { const box = await page.locator("#game").boundingBox(); await page.locator("#game").click({ position: { x: box.width * (48 + col * 54) / 420, y: 65 } }); }
+  };
+  await shootRoute(0, 2);
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "1");
+  await expect(page.locator("#levelOverlay")).not.toBeVisible();
+  await page.reload();
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "1");
+  await expect(page.locator('#routeTargets [data-col="4"]')).toHaveAttribute("aria-pressed", "true");
+  await shootRoute(1, 4);
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "2");
+  await expect(page.locator("#levelOverlay")).toBeVisible();
+  await page.locator("#nextLevel").click();
+  await expect(page.locator("#level")).toHaveText("09");
+  await expect(page.locator("#bombCount")).toHaveText("1");
+  await expect(page.locator('.slot[data-tier="2"]')).toHaveCount(1);
+});
+
+test("a won bomb arrives on the next mine, really explodes and stays spent after reload", async ({ page, isMobile }) => {
+  const save = { ...createState(), level: 2, best: 2, coins: 5000, inventory: [2, 3, ...Array(10).fill(null)] };
+  openBoard(save);
+  for (let row = 0; row < 10; row++) save.board.hp[row * 7 + 3] = 0;
+  await seed(page, { ...save, tutorialDone: true });
+  await page.goto("/");
+  await expect(page.locator("#supplies")).not.toBeVisible();
+  await slot(page, 0).click();
+  if (isMobile) await page.locator("#dropSelected").click();
+  else { const box = await page.locator("#game").boundingBox(); await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } }); }
+  await expect(page.locator("#levelOverlay")).toBeVisible();
+  await page.locator("#nextLevel").click();
+  await expect(page.locator("#bombCount")).toHaveText("1");
+  await page.locator("#throwBomb").click();
+  await expect(page.locator("#game")).toHaveAttribute("data-bombs", "0");
+  await expect(page.locator("#game")).toHaveAttribute("data-explosions", "1");
+  await expect(page.locator("#game")).not.toHaveAttribute("data-destroyed", "0");
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "0");
+  await expect(page.locator("#throwBomb")).toBeDisabled();
+  await page.reload();
+  await expect(page.locator("#game")).toHaveAttribute("data-bombs", "0");
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "0");
+});
+
+test("a collected final mine restores without duplicate payout and starts a new campaign", async ({
   page,
 }) => {
   const save = { ...createState(), level: 130, best: 130 };
   openBoard(save);
   save.board.hp.fill(0);
+  save.board.claimed = routeColumns(save.level);
   save.coins = 180;
   await seed(page, { ...save, tutorialDone: true });
   await page.goto("/");
@@ -324,42 +402,58 @@ test("sound preference persists and local mode makes no platform requests", asyn
   expect(requests).toEqual([]);
 });
 
-test("a real mining hit reveals the guardian, victory earns a persistent trophy and its boost", async ({
-  page,
-}) => {
-  const save = {
-    ...createState(),
-    level: 15,
-    best: 15,
-    power: 2,
-    coins: 500,
-    inventory: [12, 4, ...Array(10).fill(null)],
-  };
+test("a real route pickup reveals the guardian, victory earns a trophy and carries the prizes", async ({ page }) => {
+  const save = { ...createState(), level: 15, best: 15, power: 2, coins: 500,
+    inventory: [12, 12, 4, ...Array(9).fill(null)] };
   openBoard(save);
-  save.board.hp.fill(0);
-  save.board.hp[3] = 1;
+  for (let id = 0; id < 70; id++) if ([2, 3, 4].includes(id % 7)) save.board.hp[id] = 0;
+  save.board.hp[4] = 1;
+  save.board.claimed = [2];
   await seed(page, { ...save, tutorialDone: true });
   await page.goto("/");
   await expect(page.locator("#game")).toHaveAttribute("data-boss", "waiting");
   await slot(page, 0).click();
   const box = await page.locator("#game").boundingBox();
-  await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } });
+  await page.locator("#game").click({ position: { x: box.width * 264 / 420, y: 65 } });
+  await expect(page.locator("#game")).toHaveAttribute("data-claimed", "2");
   await expect(page.locator("#game")).toHaveAttribute("data-boss", "active");
+  await expect(page.locator("#levelOverlay")).not.toBeVisible();
+  await slot(page, 1).click();
+  await page.locator("#game").click({ position: { x: box.width / 2, y: 65 } });
   await expect(page.locator("#winTitle")).toHaveText("Хранитель побеждён!");
   await expect(page.locator("#levelOverlay")).toBeVisible();
   await expect(page.locator('[data-trophy="15"]')).toContainText("Медный рог");
   await page.locator("#nextLevel").click();
   await expect(page.locator("#level")).toHaveText("16");
-  await slot(page, 1).click();
+  await expect(page.locator("#bombCount")).toHaveText("1");
+  await slot(page, 2).click();
   await expect(page.locator("#selectedInfo")).toContainText("урон 26");
   await page.reload();
   await expect(page.locator('[data-trophy="15"]')).toBeVisible();
-  expect(
-    await page.evaluate(
-      (key) => JSON.parse(localStorage.getItem(key)).trophies,
-      STORAGE,
-    ),
-  ).toEqual([15]);
+  expect(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).trophies, STORAGE)).toEqual([15]);
+});
+
+test("a guardian fight with only bonus bombs allows a real throw instead of restarting", async ({ page }) => {
+  const save = { ...createState(), level: 15, best: 15, bombs: 2, inventory: Array(12).fill(null) };
+  openBoard(save);
+  for (let id = 0; id < 70; id++) if (routeColumns(15).includes(id % 7)) save.board.hp[id] = 0;
+  save.board.claimed = routeColumns(15);
+  save.coins = 0;
+  const hp = save.boss.hp;
+  await seed(page, { ...save, tutorialDone: true });
+  await page.goto("/");
+  await expect(page.locator("#game")).toHaveAttribute("data-boss", "active");
+  await expect(page.locator("#attemptNumber")).toHaveText("1");
+  await expect(page.locator("#throwBomb")).toBeEnabled();
+  await page.locator('#routeTargets [data-col="4"]').click();
+  await page.locator("#throwBomb").click();
+  await expect(page.locator("#game")).toHaveAttribute("data-explosions", "1");
+  const saved = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)), STORAGE);
+  expect(saved.boss.hp).toBeLessThan(hp);
+  expect(saved.bombs).toBe(1);
+  await page.reload();
+  await expect(page.locator("#attemptNumber")).toHaveText("1");
+  await expect(page.locator("#bombCount")).toHaveText("1");
 });
 
 test("guardian health and armour phase survive reloading in the middle of a fight", async ({
@@ -374,6 +468,7 @@ test("guardian health and armour phase survive reloading in the middle of a figh
   };
   openBoard(save);
   save.board.hp.fill(0);
+  save.board.claimed = routeColumns(save.level);
   save.boss.hp = 300;
   save.boss.hits = 2;
   await seed(page, { ...save, tutorialDone: true });

@@ -143,6 +143,7 @@ export const LEVELS = Array.from({ length: CAMPAIGN_LENGTH }, (_, index) => {
     challenge,
     treasure,
     boss: !!trophy,
+    routes: challenge || trophy ? id >= 64 ? 3 : 2 : 1,
     trophy: trophy || null,
     name:
       id === CAMPAIGN_LENGTH

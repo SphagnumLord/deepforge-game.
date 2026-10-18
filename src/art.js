@@ -85,6 +85,18 @@ export function drawTool(ctx, tier, x, y, angle = 0, size = 1) {
   }
   ctx.restore();
 }
+export function drawBomb(c, x, y, angle = 0, size = 1) {
+  c.save(); c.translate(x, y); c.rotate(angle); c.scale(size, size);
+  const metal = c.createRadialGradient(-4, -5, 1, 0, 0, 13);
+  metal.addColorStop(0, "#617273"); metal.addColorStop(.4, "#303d42"); metal.addColorStop(1, "#101c26");
+  c.fillStyle = metal; c.strokeStyle = "#9ca59a"; c.lineWidth = 1;
+  c.beginPath(); c.arc(0, 1, 11, 0, Math.PI * 2); c.fill(); c.stroke();
+  c.strokeStyle = "#cba466"; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(3, -9); c.quadraticCurveTo(5, -19, 11, -13); c.stroke();
+  c.fillStyle = "#ffdc8a"; c.beginPath(); c.arc(11, -14, 2, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#bdc6b5"; c.fillRect(-5, -5, 3, 2);
+  c.restore();
+}
 const trophyPaths = {
   horn: "M12 29Q4 17 12 5Q9 19 21 22L28 30Z",
   eye: "M5 19Q20 2 35 19Q20 37 5 19ZM15 19A5 7 0 1 0 25 19A5 7 0 1 0 15 19Z",
